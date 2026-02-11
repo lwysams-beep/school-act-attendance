@@ -1,6 +1,6 @@
 // =============================================================================
-//  點名專用 APP - VERSION 1.8
-//  修正: 採用更強制、更可靠的 JS 方法來鎖定捲動位置，解決頁面跳轉問題
+//  點名專用 APP - VERSION 1.9
+//  重構: 採用獨立 StudentRow 元件，徹底解決滾動跳轉問題
 // =============================================================================
 import React, { useState, useMemo, useEffect, useRef, useLayoutEffect } from 'react';
 import { Shield, Key, List, Check, X, User, Activity, LogOut, Save, Settings, MonitorPlay, Download, Circle, HelpCircle } from 'lucide-react';
@@ -37,6 +37,28 @@ const exportToCSV = (csvString, filename) => {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+};
+
+// =============================================================================
+//  V1.9 NEW COMPONENT: StudentRow
+//  這個獨立元件只負責自己的渲染，避免父元件列表刷新
+// =============================================================================
+const StudentRow = ({ student, status, onStatusChange }) => {
+    return (
+        <div className="bg-white p-4 rounded-lg shadow-sm flex items-center justify-between">
+            <div>
+                <span className="text-sm bg-slate-200 text-slate-700 font-bold px-2 py-1 rounded-full">{student.verifiedClass} ({student.verifiedClassNo})</span>
+                <span className="ml-3 text-lg font-bold text-slate-800">{student.verifiedName}</span>
+            </div>
+            <div className="flex gap-2 flex-wrap justify-end">
+                <button onClick={() => onStatusChange(student.id, 'present')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'present' ? 'bg-green-500 text-white scale-110 shadow-lg' : 'bg-green-100 text-green-800'}`}>出席</button>
+                <button onClick={() => onStatusChange(student.id, 'absent')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'absent' ? 'bg-red-500 text-white scale-110 shadow-lg' : 'bg-red-100 text-red-800'}`}>缺席</button>
+                <button onClick={() => onStatusChange(student.id, 'sick')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'sick' ? 'bg-orange-500 text-white scale-110 shadow-lg' : 'bg-orange-100 text-orange-800'}`}>病假</button>
+                <button onClick={() => onStatusChange(student.id, 'leave')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'leave' ? 'bg-yellow-500 text-white scale-110 shadow-lg' : 'bg-yellow-100 text-yellow-800'}`}>事假</button>
+                <button onClick={() => onStatusChange(student.id, 'unknown')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'unknown' ? 'bg-gray-500 text-white scale-110 shadow-lg' : 'bg-gray-100 text-gray-800'}`}>未知</button>
+            </div>
+        </div>
+    );
 };
 
 
@@ -362,26 +384,8 @@ const App = () => {
         );
     };
 
-    // V1.8 REVISION: 採用全新的捲動鎖定邏輯
+    // V1.9 REVISION: 點名頁面使用全新的 StudentRow 元件
     const AttendanceSheetView = () => {
-        const scrollRef = useRef(null);
-        const lastScrollTop = useRef(0); // 用 ref 來儲存上一次的滾動位置
-
-        // 使用 useLayoutEffect，在 DOM 更新後、瀏覽器繪製前，強制恢復滾動位置
-        useLayoutEffect(() => {
-            if (scrollRef.current) {
-                scrollRef.current.scrollTop = lastScrollTop.current;
-            }
-        }); // 每次 re-render 都執行此效果
-
-        // 新的點擊處理函式，在更新 state 前記錄滾動位置
-        const handleStatusClick = (studentDocId, status) => {
-            if (scrollRef.current) {
-                lastScrollTop.current = scrollRef.current.scrollTop;
-            }
-            handleSetTempAttendance(studentDocId, status);
-        };
-        
         return (
             <div className="p-4 md:p-8 flex flex-col h-screen">
                 <div className="flex-shrink-0">
@@ -390,26 +394,16 @@ const App = () => {
                     <p className="text-slate-500 mb-6">日期: {today}</p>
                 </div>
                 
-                <div ref={scrollRef} className="flex-grow overflow-y-auto pb-24">
+                <div className="flex-grow overflow-y-auto pb-24">
                     <div className="space-y-2">
-                        {studentsForSelectedActivity.map(student => {
-                            const status = tempAttendance[student.id];
-                            return (
-                                <div key={student.id} className="bg-white p-4 rounded-lg shadow-sm flex items-center justify-between">
-                                    <div>
-                                        <span className="text-sm bg-slate-200 text-slate-700 font-bold px-2 py-1 rounded-full">{student.verifiedClass} ({student.verifiedClassNo})</span>
-                                        <span className="ml-3 text-lg font-bold text-slate-800">{student.verifiedName}</span>
-                                    </div>
-                                    <div className="flex gap-2 flex-wrap justify-end">
-                                        <button onClick={() => handleStatusClick(student.id, 'present')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'present' ? 'bg-green-500 text-white scale-110 shadow-lg' : 'bg-green-100 text-green-800'}`}>出席</button>
-                                        <button onClick={() => handleStatusClick(student.id, 'absent')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'absent' ? 'bg-red-500 text-white scale-110 shadow-lg' : 'bg-red-100 text-red-800'}`}>缺席</button>
-                                        <button onClick={() => handleStatusClick(student.id, 'sick')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'sick' ? 'bg-orange-500 text-white scale-110 shadow-lg' : 'bg-orange-100 text-orange-800'}`}>病假</button>
-                                        <button onClick={() => handleStatusClick(student.id, 'leave')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'leave' ? 'bg-yellow-500 text-white scale-110 shadow-lg' : 'bg-yellow-100 text-yellow-800'}`}>事假</button>
-                                        <button onClick={() => handleStatusClick(student.id, 'unknown')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'unknown' ? 'bg-gray-500 text-white scale-110 shadow-lg' : 'bg-gray-100 text-gray-800'}`}>未知</button>
-                                    </div>
-                                </div>
-                            );
-                        })}
+                        {studentsForSelectedActivity.map(student => (
+                            <StudentRow 
+                                key={student.id} 
+                                student={student} 
+                                status={tempAttendance[student.id]} 
+                                onStatusChange={handleSetTempAttendance}
+                            />
+                        ))}
                     </div>
                 </div>
 
