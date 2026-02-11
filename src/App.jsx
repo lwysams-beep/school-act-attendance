@@ -1,8 +1,8 @@
 // =============================================================================
-//  點名專用 APP - VERSION 1.9
-//  重構: 採用獨立 StudentRow 元件，徹底解決滾動跳轉問題
+//  點名專用 APP - VERSION 2.0
+//  架構重寫: 採用 React.memo 和 useCallback，從根本上解決滾動跳轉問題
 // =============================================================================
-import React, { useState, useMemo, useEffect, useRef, useLayoutEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Shield, Key, List, Check, X, User, Activity, LogOut, Save, Settings, MonitorPlay, Download, Circle, HelpCircle } from 'lucide-react';
 
 // =============================================================================
@@ -40,10 +40,12 @@ const exportToCSV = (csvString, filename) => {
 };
 
 // =============================================================================
-//  V1.9 NEW COMPONENT: StudentRow
-//  這個獨立元件只負責自己的渲染，避免父元件列表刷新
+//  V2.0 NEW COMPONENT: StudentRow (with React.memo)
 // =============================================================================
-const StudentRow = ({ student, status, onStatusChange }) => {
+const StudentRow = React.memo(({ student, status, onStatusChange }) => {
+    // 這個 console.log 可以讓你親眼看到只有被點擊的行才會重新渲染
+    // console.log(`Rendering row for: ${student.verifiedName}`);
+    
     return (
         <div className="bg-white p-4 rounded-lg shadow-sm flex items-center justify-between">
             <div>
@@ -59,7 +61,7 @@ const StudentRow = ({ student, status, onStatusChange }) => {
             </div>
         </div>
     );
-};
+});
 
 
 // =============================================================================
@@ -162,14 +164,15 @@ const App = () => {
         }
     };
     
-    const handleSetTempAttendance = (studentDocId, status) => {
+    // V2.0: 使用 useCallback 確保 handleSetTempAttendance 函式穩定
+    const handleSetTempAttendance = useCallback((studentDocId, status) => {
         setTempAttendance(prev => ({
             ...prev,
             [studentDocId]: status,
         }));
-    };
+    }, []); // 空依賴陣列，此函式只會被建立一次
     
-    const handleSaveAttendance = async () => { /* ... (no change) ... */ 
+    const handleSaveAttendance = async () => {
         if (Object.keys(tempAttendance).length === 0) {
             alert("沒有需要儲存的點名記錄。");
             return;
@@ -384,7 +387,7 @@ const App = () => {
         );
     };
 
-    // V1.9 REVISION: 點名頁面使用全新的 StudentRow 元件
+    // V2.0: 點名頁面使用全新的 StudentRow 元件
     const AttendanceSheetView = () => {
         return (
             <div className="p-4 md:p-8 flex flex-col h-screen">
