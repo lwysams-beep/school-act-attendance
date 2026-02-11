@@ -1,6 +1,6 @@
 // =============================================================================
-//  點名專用 APP - VERSION 2.4
-//  修正: 移除 CSV 報表圖例中多餘的等號"="
+//  點名專用 APP - VERSION 2.5
+//  功能: 根據要求，從點名選項和CSV圖例中移除「缺席(Absent)」
 // =============================================================================
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Shield, Key, List, User, Activity, LogOut, Save, Settings, MonitorPlay, Download, Circle } from 'lucide-react';
@@ -51,7 +51,7 @@ const StudentRow = React.memo(({ student, status, onStatusChange }) => {
             <div className="flex gap-2 flex-wrap justify-end">
                 <button onClick={() => onStatusChange(student.id, 'present')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'present' ? 'bg-green-500 text-white scale-110 shadow-lg' : 'bg-green-100 text-green-800'}`}>出席</button>
                 <button onClick={() => onStatusChange(student.id, 'late')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'late' ? 'bg-blue-500 text-white scale-110 shadow-lg' : 'bg-blue-100 text-blue-800'}`}>遲到</button>
-                <button onClick={() => onStatusChange(student.id, 'absent')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'absent' ? 'bg-red-500 text-white scale-110 shadow-lg' : 'bg-red-100 text-red-800'}`}>缺席</button>
+                {/* V2.5: "缺席" 按鈕已移除 */}
                 <button onClick={() => onStatusChange(student.id, 'sick')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'sick' ? 'bg-orange-500 text-white scale-110 shadow-lg' : 'bg-orange-100 text-orange-800'}`}>病假</button>
                 <button onClick={() => onStatusChange(student.id, 'leave')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'leave' ? 'bg-yellow-500 text-white scale-110 shadow-lg' : 'bg-yellow-100 text-yellow-800'}`}>事假</button>
                 <button onClick={() => onStatusChange(student.id, 'unknown')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'unknown' ? 'bg-gray-500 text-white scale-110 shadow-lg' : 'bg-gray-100 text-gray-800'}`}>未知</button>
@@ -204,14 +204,14 @@ const App = () => {
         }
     }, [today]);
 
-    const handleAdminLogin = async (email, password) => { /* ... (no change) ... */ 
+    const handleAdminLogin = async (email, password) => {
         try { await signInWithEmailAndPassword(auth, email, password); setCurrentView('adminConsole'); } 
         catch (error) { alert("Admin 登入失敗: " + error.message); }
     };
 
     const handleAdminLogout = async () => { await signOut(auth); setCurrentView('activityList'); };
     
-    const handleSaveConfig = async (activityName, password) => { /* ... (no change) ... */ 
+    const handleSaveConfig = async (activityName, password) => {
         if (!/^\d{4}$/.test(password)) return alert("密碼必須為4位數字！");
         try {
             await setDoc(doc(db, "activity_configs", activityName), { password }, { merge: true });
@@ -219,7 +219,7 @@ const App = () => {
         } catch (error) { alert("儲存失敗：" + error.message); }
     };
     
-    // V2.4 REVISION: 修正 CSV 圖例格式
+    // V2.5 REVISION: 更新 CSV 匯出邏輯
     const handleExportCSV = (activityName) => {
         const students = activities.filter(act => act.activity === activityName);
         if (students.length === 0) return alert("沒有學生資料可匯出。");
@@ -254,13 +254,13 @@ const App = () => {
                 csvContent += [...studentData, '', ...attendanceData].map(field => `"${String(field)}"`).join(',') + '\n';
             });
         
-        // V2.4: 修正圖例格式，移除等號
+        // V2.5: 更新圖例，移除 "缺席"
         csvContent += '\n\n';
         csvContent += '"圖例:",\n';
         csvContent += '"✓","出席 (Present)"\n';
         csvContent += '"L","遲到 (Late)"\n';
         csvContent += '"S","病假 (Sick)"\n';
-        csvContent += '"A","缺席 (Absent)"\n';
+        // csvContent += '"A","缺席 (Absent)"\n'; // "缺席" 已移除
         csvContent += '"?","未知 (Unknown)"\n';
 
         exportToCSV(csvContent, `${activityName}_出席總表`);
