@@ -1,6 +1,6 @@
 // =============================================================================
-//  點名專用 APP - VERSION 2.2
-//  修正: 補上 AdminConsoleView 中遺漏的 JSX 程式碼，解決部署失敗問題
+//  點名專用 APP - VERSION 2.3
+//  功能: 1. 點名加入"遲到"選項 2. CSV報表下方加入圖例說明
 // =============================================================================
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Shield, Key, List, User, Activity, LogOut, Save, Settings, MonitorPlay, Download, Circle } from 'lucide-react';
@@ -50,6 +50,8 @@ const StudentRow = React.memo(({ student, status, onStatusChange }) => {
             </div>
             <div className="flex gap-2 flex-wrap justify-end">
                 <button onClick={() => onStatusChange(student.id, 'present')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'present' ? 'bg-green-500 text-white scale-110 shadow-lg' : 'bg-green-100 text-green-800'}`}>出席</button>
+                {/* V2.3: 新增遲到按鈕 */}
+                <button onClick={() => onStatusChange(student.id, 'late')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'late' ? 'bg-blue-500 text-white scale-110 shadow-lg' : 'bg-blue-100 text-blue-800'}`}>遲到</button>
                 <button onClick={() => onStatusChange(student.id, 'absent')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'absent' ? 'bg-red-500 text-white scale-110 shadow-lg' : 'bg-red-100 text-red-800'}`}>缺席</button>
                 <button onClick={() => onStatusChange(student.id, 'sick')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'sick' ? 'bg-orange-500 text-white scale-110 shadow-lg' : 'bg-orange-100 text-orange-800'}`}>病假</button>
                 <button onClick={() => onStatusChange(student.id, 'leave')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'leave' ? 'bg-yellow-500 text-white scale-110 shadow-lg' : 'bg-yellow-100 text-yellow-800'}`}>事假</button>
@@ -124,7 +126,6 @@ const AttendanceSheetView = ({ activityName, students, today, onSave, onCancel }
 //  主應用程式組件 (App)
 // =============================================================================
 const App = () => {
-    // --- 狀態管理 ---
     const [user, setUser] = useState(null);
     const [activities, setActivities] = useState([]);
     const [activityConfigs, setActivityConfigs] = useState({});
@@ -133,7 +134,6 @@ const App = () => {
     const [passwordInput, setPasswordInput] = useState('');
     const [authError, setAuthError] = useState('');
 
-    // --- Firebase 資料監聽 ---
     useEffect(() => {
         const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
             setUser(currentUser);
@@ -150,7 +150,6 @@ const App = () => {
         return () => { unsubscribeAuth(); unsubscribeActivities(); unsubscribeConfigs(); };
     }, [currentView]);
 
-    // --- 數據處理 ---
     const today = useMemo(() => new Date().toLocaleDateString('en-CA'), []);
 
     const todaysActivities = useMemo(() => {
@@ -173,7 +172,6 @@ const App = () => {
             .sort((a,b) => `${a.verifiedClass}-${a.verifiedClassNo}`.localeCompare(`${b.verifiedClass}-${b.verifiedClassNo}`));
     }, [activities, selectedActivity]);
 
-    // --- 事件處理 ---
     const handleActivitySelect = (activityName) => {
         setSelectedActivity(activityName);
         setPasswordInput('');
@@ -222,7 +220,8 @@ const App = () => {
         } catch (error) { alert("儲存失敗：" + error.message); }
     };
     
-    const handleExportCSV = (activityName) => { /* ... (no change) ... */ 
+    // V2.3 REVISION: 更新 CSV 匯出邏輯
+    const handleExportCSV = (activityName) => {
         const students = activities.filter(act => act.activity === activityName);
         if (students.length === 0) return alert("沒有學生資料可匯出。");
 
@@ -231,7 +230,8 @@ const App = () => {
         students.forEach(s => s.attendance && Object.keys(s.attendance).forEach(date => allDates.add(date)));
         const sortedDates = Array.from(allDates).sort();
 
-        const symbolMap = { present: '✓', absent: 'A', sick: 'S', leave: 'L', unknown: '?' };
+        // 更新符號對應表
+        const symbolMap = { present: '✓', absent: 'A', sick: 'S', leave: 'L', late: 'L', unknown: '?' };
         
         let csvContent = `"${activityName} 出席總表"\n"地點：","${location}"\n"時間：","${time}"\n`;
         const studentHeaders = ['班別', '學號', '姓名', '性別', '電話'];
@@ -255,6 +255,16 @@ const App = () => {
                 const attendanceData = sortedDates.map(date => symbolMap[s.attendance?.[date]] || '');
                 csvContent += [...studentData, '', ...attendanceData].map(field => `"${String(field)}"`).join(',') + '\n';
             });
+        
+        // V2.3: 新增圖例
+        csvContent += '\n\n';
+        csvContent += '"圖例:",\n';
+        csvContent += '"✓","= 出席 (Present)"\n';
+        csvContent += '"L","= 遲到 (Late)"\n';
+        csvContent += '"S","= 病假 (Sick)"\n';
+        csvContent += '"A","= 缺席 (Absent)"\n';
+        csvContent += '"?","= 未知 (Unknown)"\n';
+
 
         exportToCSV(csvContent, `${activityName}_出席總表`);
     };
@@ -279,7 +289,7 @@ const App = () => {
         );
     };
 
-    const AdminConsoleView = () => {
+    const AdminConsoleView = () => { /* ... (no change) ... */ 
         const allActivityNames = useMemo(() => Array.from(new Set(activities.map(a => a.activity))).sort(), [activities]);
         const [passwords, setPasswords] = useState({});
 
@@ -303,7 +313,6 @@ const App = () => {
         return (
             <div className="p-4 md:p-8">
                 <div className="flex justify-between items-center mb-6">
-                    {/* V2.2 FIX: 修正此處的語法錯誤 */}
                     <h1 className="text-3xl font-bold text-slate-800 flex items-center"><Settings className="mr-2"/> Admin Console</h1>
                     <button onClick={handleAdminLogout} className="flex items-center bg-red-500 text-white px-4 py-2 rounded-lg"><LogOut size={16} className="mr-2"/>登出</button>
                 </div>
