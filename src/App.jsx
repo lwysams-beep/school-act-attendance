@@ -13,12 +13,13 @@ import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from
 import { getFirestore, collection, doc, onSnapshot, updateDoc, setDoc, writeBatch } from "firebase/firestore";
 
 const firebaseConfig = {
-    apiKey: "YOUR_API_KEY",
-    authDomain: "YOUR_AUTH_DOMAIN",
-    projectId: "YOUR_PROJECT_ID",
-    storageBucket: "YOUR_STORAGE_BUCKET",
-    messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-    appId: "YOUR_APP_ID"
+    apiKey: "AIzaSyDXZClMosztnJBd0CK6cpS6PPtJTTpgDkQ",
+    authDomain: "school-act-directory.firebaseapp.com",
+    projectId: "school-act-directory",
+    storageBucket: "school-act-directory.firebasestorage.app",
+    messagingSenderId: "351532359820",
+    appId: "1:351532359820:web:29a353f54826ac80a41ba9",
+    measurementId: "G-K5G20KH0RH"
 };
 
 const app = initializeApp(firebaseConfig, "attendanceApp");
