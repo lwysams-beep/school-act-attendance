@@ -1,6 +1,6 @@
 // =============================================================================
-//  點名專用 APP - VERSION 2.3
-//  功能: 1. 點名加入"遲到"選項 2. CSV報表下方加入圖例說明
+//  點名專用 APP - VERSION 2.4
+//  修正: 移除 CSV 報表圖例中多餘的等號"="
 // =============================================================================
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Shield, Key, List, User, Activity, LogOut, Save, Settings, MonitorPlay, Download, Circle } from 'lucide-react';
@@ -50,7 +50,6 @@ const StudentRow = React.memo(({ student, status, onStatusChange }) => {
             </div>
             <div className="flex gap-2 flex-wrap justify-end">
                 <button onClick={() => onStatusChange(student.id, 'present')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'present' ? 'bg-green-500 text-white scale-110 shadow-lg' : 'bg-green-100 text-green-800'}`}>出席</button>
-                {/* V2.3: 新增遲到按鈕 */}
                 <button onClick={() => onStatusChange(student.id, 'late')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'late' ? 'bg-blue-500 text-white scale-110 shadow-lg' : 'bg-blue-100 text-blue-800'}`}>遲到</button>
                 <button onClick={() => onStatusChange(student.id, 'absent')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'absent' ? 'bg-red-500 text-white scale-110 shadow-lg' : 'bg-red-100 text-red-800'}`}>缺席</button>
                 <button onClick={() => onStatusChange(student.id, 'sick')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'sick' ? 'bg-orange-500 text-white scale-110 shadow-lg' : 'bg-orange-100 text-orange-800'}`}>病假</button>
@@ -220,7 +219,7 @@ const App = () => {
         } catch (error) { alert("儲存失敗：" + error.message); }
     };
     
-    // V2.3 REVISION: 更新 CSV 匯出邏輯
+    // V2.4 REVISION: 修正 CSV 圖例格式
     const handleExportCSV = (activityName) => {
         const students = activities.filter(act => act.activity === activityName);
         if (students.length === 0) return alert("沒有學生資料可匯出。");
@@ -230,7 +229,6 @@ const App = () => {
         students.forEach(s => s.attendance && Object.keys(s.attendance).forEach(date => allDates.add(date)));
         const sortedDates = Array.from(allDates).sort();
 
-        // 更新符號對應表
         const symbolMap = { present: '✓', absent: 'A', sick: 'S', leave: 'L', late: 'L', unknown: '?' };
         
         let csvContent = `"${activityName} 出席總表"\n"地點：","${location}"\n"時間：","${time}"\n`;
@@ -256,15 +254,14 @@ const App = () => {
                 csvContent += [...studentData, '', ...attendanceData].map(field => `"${String(field)}"`).join(',') + '\n';
             });
         
-        // V2.3: 新增圖例
+        // V2.4: 修正圖例格式，移除等號
         csvContent += '\n\n';
         csvContent += '"圖例:",\n';
-        csvContent += '"✓","= 出席 (Present)"\n';
-        csvContent += '"L","= 遲到 (Late)"\n';
-        csvContent += '"S","= 病假 (Sick)"\n';
-        csvContent += '"A","= 缺席 (Absent)"\n';
-        csvContent += '"?","= 未知 (Unknown)"\n';
-
+        csvContent += '"✓","出席 (Present)"\n';
+        csvContent += '"L","遲到 (Late)"\n';
+        csvContent += '"S","病假 (Sick)"\n';
+        csvContent += '"A","缺席 (Absent)"\n';
+        csvContent += '"?","未知 (Unknown)"\n';
 
         exportToCSV(csvContent, `${activityName}_出席總表`);
     };
