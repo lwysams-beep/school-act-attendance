@@ -1,9 +1,9 @@
 // =============================================================================
 //  點名專用 APP - VERSION 2.0
-//  架構重寫: 採用 React.memo 和 useCallback，從根本上解決滾動跳轉問題
+//  架構重寫: 採用 scrollIntoView 機制，命令式鎖定滾動位置，徹底解決跳轉問題
 // =============================================================================
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { Shield, Key, List, Check, X, User, Activity, LogOut, Save, Settings, MonitorPlay, Download, Circle, HelpCircle } from 'lucide-react';
+import React, { useState, useMemo, useEffect, useCallback, useLayoutEffect, useRef } from 'react';
+import { Shield, Key, List, Check, X, User, Activity, LogOut, Save, Settings, MonitorPlay, Download, Circle } from 'lucide-react';
 
 // =============================================================================
 //  FIREBASE IMPORTS & CONFIGURATION (請填入你的 Firebase 設定)
@@ -12,15 +12,13 @@ import { initializeApp } from "firebase/app";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
 import { getFirestore, collection, doc, onSnapshot, updateDoc, setDoc, writeBatch } from "firebase/firestore";
 
-
 const firebaseConfig = {
-    apiKey: "AIzaSyDXZClMosztnJBd0CK6cpS6PPtJTTpgDkQ",
-    authDomain: "school-act-directory.firebaseapp.com",
-    projectId: "school-act-directory",
-    storageBucket: "school-act-directory.firebasestorage.app",
-    messagingSenderId: "351532359820",
-    appId: "1:351532359820:web:29a353f54826ac80a41ba9",
-    measurementId: "G-K5G20KH0RH"
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_AUTH_DOMAIN",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_STORAGE_BUCKET",
+    messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+    appId: "YOUR_APP_ID"
 };
 
 const app = initializeApp(firebaseConfig, "attendanceApp");
@@ -40,31 +38,6 @@ const exportToCSV = (csvString, filename) => {
 };
 
 // =============================================================================
-//  V2.0 NEW COMPONENT: StudentRow (with React.memo)
-// =============================================================================
-const StudentRow = React.memo(({ student, status, onStatusChange }) => {
-    // 這個 console.log 可以讓你親眼看到只有被點擊的行才會重新渲染
-    // console.log(`Rendering row for: ${student.verifiedName}`);
-    
-    return (
-        <div className="bg-white p-4 rounded-lg shadow-sm flex items-center justify-between">
-            <div>
-                <span className="text-sm bg-slate-200 text-slate-700 font-bold px-2 py-1 rounded-full">{student.verifiedClass} ({student.verifiedClassNo})</span>
-                <span className="ml-3 text-lg font-bold text-slate-800">{student.verifiedName}</span>
-            </div>
-            <div className="flex gap-2 flex-wrap justify-end">
-                <button onClick={() => onStatusChange(student.id, 'present')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'present' ? 'bg-green-500 text-white scale-110 shadow-lg' : 'bg-green-100 text-green-800'}`}>出席</button>
-                <button onClick={() => onStatusChange(student.id, 'absent')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'absent' ? 'bg-red-500 text-white scale-110 shadow-lg' : 'bg-red-100 text-red-800'}`}>缺席</button>
-                <button onClick={() => onStatusChange(student.id, 'sick')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'sick' ? 'bg-orange-500 text-white scale-110 shadow-lg' : 'bg-orange-100 text-orange-800'}`}>病假</button>
-                <button onClick={() => onStatusChange(student.id, 'leave')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'leave' ? 'bg-yellow-500 text-white scale-110 shadow-lg' : 'bg-yellow-100 text-yellow-800'}`}>事假</button>
-                <button onClick={() => onStatusChange(student.id, 'unknown')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'unknown' ? 'bg-gray-500 text-white scale-110 shadow-lg' : 'bg-gray-100 text-gray-800'}`}>未知</button>
-            </div>
-        </div>
-    );
-});
-
-
-// =============================================================================
 //  主應用程式組件
 // =============================================================================
 const App = () => {
@@ -78,6 +51,10 @@ const App = () => {
     const [authError, setAuthError] = useState('');
     const [tempAttendance, setTempAttendance] = useState({});
     const [isSaving, setIsSaving] = useState(false);
+    
+    // V2.0: 新增 state 來追蹤最後點擊的學生 ID
+    const [lastClickedStudentId, setLastClickedStudentId] = useState(null);
+
 
     // --- Firebase 資料監聽 ---
     useEffect(() => {
@@ -164,15 +141,16 @@ const App = () => {
         }
     };
     
-    // V2.0: 使用 useCallback 確保 handleSetTempAttendance 函式穩定
-    const handleSetTempAttendance = useCallback((studentDocId, status) => {
+    // V2.0: 更新狀態的同時，記錄被點擊的學生ID
+    const handleSetTempAttendance = (studentDocId, status) => {
+        setLastClickedStudentId(studentDocId); // 記住是誰被點了
         setTempAttendance(prev => ({
             ...prev,
             [studentDocId]: status,
         }));
-    }, []); // 空依賴陣列，此函式只會被建立一次
+    };
     
-    const handleSaveAttendance = async () => {
+    const handleSaveAttendance = async () => { /* ... (no change) ... */ 
         if (Object.keys(tempAttendance).length === 0) {
             alert("沒有需要儲存的點名記錄。");
             return;
@@ -387,8 +365,20 @@ const App = () => {
         );
     };
 
-    // V2.0: 點名頁面使用全新的 StudentRow 元件
+    // V2.0: 點名頁面使用全新的 scrollIntoView 機制
     const AttendanceSheetView = () => {
+        
+        useLayoutEffect(() => {
+            if (lastClickedStudentId) {
+                const element = document.getElementById(`student-row-${lastClickedStudentId}`);
+                if (element) {
+                    element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+                // 重置 ID，以便下次點擊能再次觸發效果
+                setLastClickedStudentId(null); 
+            }
+        }, [lastClickedStudentId]); // 只在 lastClickedStudentId 改變時執行
+
         return (
             <div className="p-4 md:p-8 flex flex-col h-screen">
                 <div className="flex-shrink-0">
@@ -399,14 +389,25 @@ const App = () => {
                 
                 <div className="flex-grow overflow-y-auto pb-24">
                     <div className="space-y-2">
-                        {studentsForSelectedActivity.map(student => (
-                            <StudentRow 
-                                key={student.id} 
-                                student={student} 
-                                status={tempAttendance[student.id]} 
-                                onStatusChange={handleSetTempAttendance}
-                            />
-                        ))}
+                        {studentsForSelectedActivity.map(student => {
+                            const status = tempAttendance[student.id];
+                            return (
+                                // 為每一行加上獨特的ID
+                                <div key={student.id} id={`student-row-${student.id}`} className="bg-white p-4 rounded-lg shadow-sm flex items-center justify-between">
+                                    <div>
+                                        <span className="text-sm bg-slate-200 text-slate-700 font-bold px-2 py-1 rounded-full">{student.verifiedClass} ({student.verifiedClassNo})</span>
+                                        <span className="ml-3 text-lg font-bold text-slate-800">{student.verifiedName}</span>
+                                    </div>
+                                    <div className="flex gap-2 flex-wrap justify-end">
+                                        <button onClick={() => handleSetTempAttendance(student.id, 'present')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'present' ? 'bg-green-500 text-white scale-110 shadow-lg' : 'bg-green-100 text-green-800'}`}>出席</button>
+                                        <button onClick={() => handleSetTempAttendance(student.id, 'absent')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'absent' ? 'bg-red-500 text-white scale-110 shadow-lg' : 'bg-red-100 text-red-800'}`}>缺席</button>
+                                        <button onClick={() => handleSetTempAttendance(student.id, 'sick')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'sick' ? 'bg-orange-500 text-white scale-110 shadow-lg' : 'bg-orange-100 text-orange-800'}`}>病假</button>
+                                        <button onClick={() => handleSetTempAttendance(student.id, 'leave')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'leave' ? 'bg-yellow-500 text-white scale-110 shadow-lg' : 'bg-yellow-100 text-yellow-800'}`}>事假</button>
+                                        <button onClick={() => handleSetTempAttendance(student.id, 'unknown')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'unknown' ? 'bg-gray-500 text-white scale-110 shadow-lg' : 'bg-gray-100 text-gray-800'}`}>未知</button>
+                                    </div>
+                                </div>
+                            );
+                        })}
                     </div>
                 </div>
 
