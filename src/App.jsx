@@ -1,6 +1,6 @@
 // =============================================================================
-//  點名專用 APP - VERSION 2.5
-//  功能: 根據要求，從點名選項和CSV圖例中移除「缺席(Absent)」
+//  點名專用 APP - VERSION 2.6
+//  功能: 將4位密碼機制由「只限數字」放寬為「英文或數字皆可」
 // =============================================================================
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Shield, Key, List, User, Activity, LogOut, Save, Settings, MonitorPlay, Download, Circle } from 'lucide-react';
@@ -13,13 +13,12 @@ import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from
 import { getFirestore, collection, doc, onSnapshot, updateDoc, setDoc, writeBatch } from "firebase/firestore";
 
 const firebaseConfig = {
-    apiKey: "AIzaSyDXZClMosztnJBd0CK6cpS6PPtJTTpgDkQ",
-    authDomain: "school-act-directory.firebaseapp.com",
-    projectId: "school-act-directory",
-    storageBucket: "school-act-directory.firebasestorage.app",
-    messagingSenderId: "351532359820",
-    appId: "1:351532359820:web:29a353f54826ac80a41ba9",
-    measurementId: "G-K5G20KH0RH"
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_AUTH_DOMAIN",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_STORAGE_BUCKET",
+    messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+    appId: "YOUR_APP_ID"
 };
 
 const app = initializeApp(firebaseConfig, "attendanceApp");
@@ -51,7 +50,6 @@ const StudentRow = React.memo(({ student, status, onStatusChange }) => {
             <div className="flex gap-2 flex-wrap justify-end">
                 <button onClick={() => onStatusChange(student.id, 'present')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'present' ? 'bg-green-500 text-white scale-110 shadow-lg' : 'bg-green-100 text-green-800'}`}>出席</button>
                 <button onClick={() => onStatusChange(student.id, 'late')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'late' ? 'bg-blue-500 text-white scale-110 shadow-lg' : 'bg-blue-100 text-blue-800'}`}>遲到</button>
-                {/* V2.5: "缺席" 按鈕已移除 */}
                 <button onClick={() => onStatusChange(student.id, 'sick')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'sick' ? 'bg-orange-500 text-white scale-110 shadow-lg' : 'bg-orange-100 text-orange-800'}`}>病假</button>
                 <button onClick={() => onStatusChange(student.id, 'leave')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'leave' ? 'bg-yellow-500 text-white scale-110 shadow-lg' : 'bg-yellow-100 text-yellow-800'}`}>事假</button>
                 <button onClick={() => onStatusChange(student.id, 'unknown')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'unknown' ? 'bg-gray-500 text-white scale-110 shadow-lg' : 'bg-gray-100 text-gray-800'}`}>未知</button>
@@ -211,15 +209,18 @@ const App = () => {
 
     const handleAdminLogout = async () => { await signOut(auth); setCurrentView('activityList'); };
     
+    // V2.6 REVISION: 放寬密碼驗證規則
     const handleSaveConfig = async (activityName, password) => {
-        if (!/^\d{4}$/.test(password)) return alert("密碼必須為4位數字！");
+        if (password.length !== 4) { // 只檢查長度
+            alert("密碼必須為4位英文或數字！");
+            return;
+        }
         try {
             await setDoc(doc(db, "activity_configs", activityName), { password }, { merge: true });
             alert(`「${activityName}」的密碼已更新。`);
         } catch (error) { alert("儲存失敗：" + error.message); }
     };
     
-    // V2.5 REVISION: 更新 CSV 匯出邏輯
     const handleExportCSV = (activityName) => {
         const students = activities.filter(act => act.activity === activityName);
         if (students.length === 0) return alert("沒有學生資料可匯出。");
@@ -254,13 +255,11 @@ const App = () => {
                 csvContent += [...studentData, '', ...attendanceData].map(field => `"${String(field)}"`).join(',') + '\n';
             });
         
-        // V2.5: 更新圖例，移除 "缺席"
         csvContent += '\n\n';
         csvContent += '"圖例:",\n';
         csvContent += '"✓","出席 (Present)"\n';
         csvContent += '"L","遲到 (Late)"\n';
         csvContent += '"S","病假 (Sick)"\n';
-        // csvContent += '"A","缺席 (Absent)"\n'; // "缺席" 已移除
         csvContent += '"?","未知 (Unknown)"\n';
 
         exportToCSV(csvContent, `${activityName}_出席總表`);
@@ -286,7 +285,8 @@ const App = () => {
         );
     };
 
-    const AdminConsoleView = () => { /* ... (no change) ... */ 
+    // V2.6 REVISION: 更新 AdminConsoleView 的 placeholder
+    const AdminConsoleView = () => {
         const allActivityNames = useMemo(() => Array.from(new Set(activities.map(a => a.activity))).sort(), [activities]);
         const [passwords, setPasswords] = useState({});
 
@@ -336,7 +336,9 @@ const App = () => {
                             <div key={name} className="flex items-center gap-2 p-3 bg-slate-50 rounded-lg">
                                 <span className="flex-1 font-semibold text-slate-600 truncate">{name}</span>
                                 <input 
-                                    type="text" maxLength="4" placeholder="4位數字密碼"
+                                    type="text" 
+                                    maxLength="4" 
+                                    placeholder="4位英數"
                                     defaultValue={activityConfigs[name]?.password || ''}
                                     onChange={(e) => setPasswords(prev => ({...prev, [name]: e.target.value}))}
                                     className="w-32 p-2 border rounded-md text-center font-mono"
