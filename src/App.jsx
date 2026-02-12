@@ -1,6 +1,6 @@
 // =============================================================================
-//  點名專用 APP - VERSION 2.6
-//  功能: 將4位密碼機制由「只限數字」放寬為「英文或數字皆可」
+//  點名專用 APP - VERSION 2.7
+//  功能: 1. 點名加入"無故缺席"選項 2. 更新CSV圖例
 // =============================================================================
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Shield, Key, List, User, Activity, LogOut, Save, Settings, MonitorPlay, Download, Circle } from 'lucide-react';
@@ -51,6 +51,8 @@ const StudentRow = React.memo(({ student, status, onStatusChange }) => {
             <div className="flex gap-2 flex-wrap justify-end">
                 <button onClick={() => onStatusChange(student.id, 'present')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'present' ? 'bg-green-500 text-white scale-110 shadow-lg' : 'bg-green-100 text-green-800'}`}>出席</button>
                 <button onClick={() => onStatusChange(student.id, 'late')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'late' ? 'bg-blue-500 text-white scale-110 shadow-lg' : 'bg-blue-100 text-blue-800'}`}>遲到</button>
+                {/* V2.7: 新增 "無故缺席" 按鈕 */}
+                <button onClick={() => onStatusChange(student.id, 'absent')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'absent' ? 'bg-red-500 text-white scale-110 shadow-lg' : 'bg-red-100 text-red-800'}`}>無故缺席</button>
                 <button onClick={() => onStatusChange(student.id, 'sick')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'sick' ? 'bg-orange-500 text-white scale-110 shadow-lg' : 'bg-orange-100 text-orange-800'}`}>病假</button>
                 <button onClick={() => onStatusChange(student.id, 'leave')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'leave' ? 'bg-yellow-500 text-white scale-110 shadow-lg' : 'bg-yellow-100 text-yellow-800'}`}>事假</button>
                 <button onClick={() => onStatusChange(student.id, 'unknown')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'unknown' ? 'bg-gray-500 text-white scale-110 shadow-lg' : 'bg-gray-100 text-gray-800'}`}>未知</button>
@@ -210,18 +212,15 @@ const App = () => {
 
     const handleAdminLogout = async () => { await signOut(auth); setCurrentView('activityList'); };
     
-    // V2.6 REVISION: 放寬密碼驗證規則
     const handleSaveConfig = async (activityName, password) => {
-        if (password.length !== 4) { // 只檢查長度
-            alert("密碼必須為4位英文或數字！");
-            return;
-        }
+        if (password.length !== 4) return alert("密碼必須為4位英文或數字！");
         try {
             await setDoc(doc(db, "activity_configs", activityName), { password }, { merge: true });
             alert(`「${activityName}」的密碼已更新。`);
         } catch (error) { alert("儲存失敗：" + error.message); }
     };
     
+    // V2.7 REVISION: 更新 CSV 匯出邏輯
     const handleExportCSV = (activityName) => {
         const students = activities.filter(act => act.activity === activityName);
         if (students.length === 0) return alert("沒有學生資料可匯出。");
@@ -256,11 +255,14 @@ const App = () => {
                 csvContent += [...studentData, '', ...attendanceData].map(field => `"${String(field)}"`).join(',') + '\n';
             });
         
+        // V2.7: 更新圖例
         csvContent += '\n\n';
         csvContent += '"圖例:",\n';
         csvContent += '"✓","出席 (Present)"\n';
         csvContent += '"L","遲到 (Late)"\n';
         csvContent += '"S","病假 (Sick)"\n';
+        csvContent += '"L","事假 (Leave)"\n';
+        csvContent += '"A","無故缺席 (Absent)"\n';
         csvContent += '"?","未知 (Unknown)"\n';
 
         exportToCSV(csvContent, `${activityName}_出席總表`);
@@ -286,8 +288,7 @@ const App = () => {
         );
     };
 
-    // V2.6 REVISION: 更新 AdminConsoleView 的 placeholder
-    const AdminConsoleView = () => {
+    const AdminConsoleView = () => { /* ... (no change) ... */ 
         const allActivityNames = useMemo(() => Array.from(new Set(activities.map(a => a.activity))).sort(), [activities]);
         const [passwords, setPasswords] = useState({});
 
@@ -337,9 +338,7 @@ const App = () => {
                             <div key={name} className="flex items-center gap-2 p-3 bg-slate-50 rounded-lg">
                                 <span className="flex-1 font-semibold text-slate-600 truncate">{name}</span>
                                 <input 
-                                    type="text" 
-                                    maxLength="4" 
-                                    placeholder="4位英數"
+                                    type="text" maxLength="4" placeholder="4位英數"
                                     defaultValue={activityConfigs[name]?.password || ''}
                                     onChange={(e) => setPasswords(prev => ({...prev, [name]: e.target.value}))}
                                     className="w-32 p-2 border rounded-md text-center font-mono"
