@@ -222,12 +222,23 @@ const App = () => {
 
     const handleAdminLogout = async () => { await signOut(auth); setCurrentView('activityList'); };
     
+// =============================================================================
+//  點名專用 APP - VERSION 2.8
+//  功能: 1. 點名加入"無故缺席"選項 2. 更新CSV圖例 3. 改善儲存密碼時的權限錯誤提示
+// =============================================================================
+
     const handleSaveConfig = async (activityName, password) => {
         if (password.length !== 4) return alert("密碼必須為4位英文或數字！");
         try {
             await setDoc(doc(db, "activity_configs", activityName), { password }, { merge: true });
             alert(`「${activityName}」的密碼已更新。`);
-        } catch (error) { alert("儲存失敗：" + error.message); }
+        } catch (error) {
+            if (error.code === 'permission-denied') {
+                alert("儲存失敗：權限不足。請檢查 Firebase Firestore 的 Security Rules (安全規則) 是否允許寫入 'activity_configs'。");
+            } else {
+                alert("儲存失敗：" + error.message); 
+            }
+        }
     };
     
     // V2.7 REVISION: 更新 CSV 匯出邏輯
@@ -449,3 +460,5 @@ const App = () => {
 };
 
 export default App;
+
+
