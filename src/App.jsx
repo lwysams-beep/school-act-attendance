@@ -137,18 +137,28 @@ const App = () => {
     useEffect(() => {
         const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
             setUser(currentUser);
-            if (!currentUser && currentView === 'adminConsole') {
-                setCurrentView('adminLogin');
+            // 如果登出，自動導回首頁
+            if (!currentUser) {
+                setCurrentView('activityList');
             }
         });
-        const unsubscribeActivities = onSnapshot(collection(db, "activities"), (snapshot) => setActivities(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+        
+        const unsubscribeActivities = onSnapshot(collection(db, "activities"), (snapshot) => {
+            const validDocs = snapshot.docs
+                .map(doc => ({ id: doc.id, ...doc.data() }))
+                .filter(doc => doc.activity); // 過濾掉沒有活動名稱的異常數據
+            setActivities(validDocs);
+        });
+        
         const unsubscribeConfigs = onSnapshot(collection(db, "activity_configs"), (snapshot) => {
             const configs = {};
             snapshot.forEach(doc => { configs[doc.id] = doc.data(); });
             setActivityConfigs(configs);
         });
+        
+        // 只在組件載入時執行一次，切換頁面不中斷連線
         return () => { unsubscribeAuth(); unsubscribeActivities(); unsubscribeConfigs(); };
-    }, [currentView]);
+    }, []);
 
     const today = useMemo(() => new Date().toLocaleDateString('en-CA'), []);
 
@@ -288,8 +298,13 @@ const App = () => {
         );
     };
 
-    const AdminConsoleView = () => { /* ... (no change) ... */ 
-        const allActivityNames = useMemo(() => Array.from(new Set(activities.map(a => a.activity))).sort(), [activities]);
+        const AdminConsoleView = () => { 
+        // 加入 Boolean 過濾，確保不會因為 undefined 導致 .sort() 崩潰或渲染空白
+        const allActivityNames = useMemo(() => {
+            const names = activities.map(a => a.activity).filter(Boolean);
+            return Array.from(new Set(names)).sort();
+        }, [activities]);
+        
         const [passwords, setPasswords] = useState({});
 
         const todayAttendanceStatus = useMemo(() => {
