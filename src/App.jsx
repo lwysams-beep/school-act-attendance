@@ -1,6 +1,6 @@
 // =============================================================================
-//  點名專用 APP - VERSION 2.7
-//  功能: 1. 點名加入"無故缺席"選項 2. 更新CSV圖例
+//  點名專用 APP - VERSION 2.9
+//  功能: 1. 點名加入"無故缺席"選項 2. 更新CSV圖例 3. 改善儲存密碼時的權限錯誤提示 4. 點名後同步更新 attendanceStatus
 // =============================================================================
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Shield, Key, List, User, Activity, LogOut, Save, Settings, MonitorPlay, Download, Circle } from 'lucide-react';
@@ -227,7 +227,11 @@ const App = () => {
             const batch = writeBatch(db);
             Object.entries(attendanceData).forEach(([studentDocId, status]) => {
                 const activityRef = doc(db, "activities", studentDocId);
-                batch.update(activityRef, { [`attendance.${today}`]: status });
+                // V2.9: 新增同步寫入 attendanceStatus 欄位
+                batch.update(activityRef, { 
+                    [`attendance.${today}`]: status,
+                    "attendanceStatus": status
+                });
             });
             await batch.commit();
             alert("點名記錄已成功儲存！");
@@ -252,11 +256,6 @@ const App = () => {
     };
 
     const handleAdminLogout = async () => { await signOut(auth); setCurrentView('activityList'); };
-    
-// =============================================================================
-//  點名專用 APP - VERSION 2.8
-//  功能: 1. 點名加入"無故缺席"選項 2. 更新CSV圖例 3. 改善儲存密碼時的權限錯誤提示
-// =============================================================================
 
     const handleSaveConfig = async (activityName, password) => {
         if (password.length !== 4) return alert("密碼必須為4位英文或數字！");
@@ -272,7 +271,7 @@ const App = () => {
         }
     };
     
-    // V2.7 REVISION: 更新 CSV 匯出邏輯
+    // 更新 CSV 匯出邏輯
     const handleExportCSV = (activityName) => {
         const students = activities.filter(act => act.activity === activityName);
         if (students.length === 0) return alert("沒有學生資料可匯出。");
@@ -307,7 +306,7 @@ const App = () => {
                 csvContent += [...studentData, '', ...attendanceData].map(field => `"${String(field)}"`).join(',') + '\n';
             });
         
-        // V2.7: 更新圖例
+        // 更新圖例
         csvContent += '\n\n';
         csvContent += '"圖例:",\n';
         csvContent += '"✓","出席 (Present)"\n';
@@ -321,7 +320,7 @@ const App = () => {
     };
 
     // --- 視圖渲染 ---
-    const AdminLoginView = () => { /* ... (no change) ... */ 
+    const AdminLoginView = () => {  
         const [email, setEmail] = useState('');
         const [password, setPassword] = useState('');
         return (
@@ -340,7 +339,7 @@ const App = () => {
         );
     };
 
-        const AdminConsoleView = () => { 
+    const AdminConsoleView = () => { 
         // 加入 Boolean 過濾，確保不會因為 undefined 導致 .sort() 崩潰或渲染空白
         const allActivityNames = useMemo(() => {
             const names = activities.map(a => a.activity).filter(Boolean);
@@ -414,7 +413,7 @@ const App = () => {
         );
     };
 
-    const ActivityListView = () => { /* ... (no change) ... */ 
+    const ActivityListView = () => { 
         return (
             <div className="p-4 md:p-8">
                 <div className="flex justify-between items-center mb-6">
@@ -436,7 +435,7 @@ const App = () => {
         );
     };
     
-    const PasswordModal = () => { /* ... (no change) ... */ 
+    const PasswordModal = () => { 
         return (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setSelectedActivity(null)}>
                 <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-xs text-center" onClick={e => e.stopPropagation()}>
@@ -491,5 +490,3 @@ const App = () => {
 };
 
 export default App;
-
-
