@@ -42,16 +42,46 @@ const exportToCSV = (csvString, filename) => {
 //  StudentRow COMPONENT (with React.memo)
 // =============================================================================
 const StudentRow = React.memo(({ student, status, onStatusChange }) => {
+    // 控制是否顯示電話號碼
+    const [showPhone, setShowPhone] = useState(false);
+
+    // 取得放學方式標籤 (兼顧 dismissalMethod 或 dismisslMethod 欄位命名)
+    const method = student.dismissalMethod || student.dismisslMethod;
+    let dismissalTag = '';
+    if (method === '自行回家') dismissalTag = ' (自)';
+    else if (method === '家長接送') dismissalTag = ' (家)';
+
     return (
         <div className="bg-white p-4 rounded-lg shadow-sm flex items-center justify-between">
-            <div>
-                <span className="text-sm bg-slate-200 text-slate-700 font-bold px-2 py-1 rounded-full">{student.verifiedClass} ({student.verifiedClassNo})</span>
-                <span className="ml-3 text-lg font-bold text-slate-800">{student.verifiedName}</span>
+            <div className="flex items-center flex-wrap gap-2">
+                <span className="text-sm bg-slate-200 text-slate-700 font-bold px-2 py-1 rounded-full">
+                    {student.verifiedClass} ({student.verifiedClassNo})
+                </span>
+                
+                {/* 姓名與放學方式標籤（可點擊） */}
+                <button 
+                    type="button"
+                    onClick={() => setShowPhone(prev => !prev)}
+                    className="text-lg font-bold text-slate-800 hover:text-blue-600 transition-colors focus:outline-none cursor-pointer flex items-center"
+                    title="按一下顯示/隱藏聯絡電話"
+                >
+                    <span>{student.verifiedName}</span>
+                    {dismissalTag && (
+                        <span className="ml-1 text-slate-600 font-semibold">{dismissalTag}</span>
+                    )}
+                </button>
+
+                {/* 點擊姓名後顯示電話 */}
+                {showPhone && (
+                    <span className="ml-1 text-sm bg-blue-50 text-blue-700 font-mono px-2.5 py-0.5 rounded-full border border-blue-200 animate-fadeIn">
+                        📞 {student.rawPhone || '無電話資料'}
+                    </span>
+                )}
             </div>
+
             <div className="flex gap-2 flex-wrap justify-end">
                 <button onClick={() => onStatusChange(student.id, 'present')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'present' ? 'bg-green-500 text-white scale-110 shadow-lg' : 'bg-green-100 text-green-800'}`}>出席</button>
                 <button onClick={() => onStatusChange(student.id, 'late')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'late' ? 'bg-blue-500 text-white scale-110 shadow-lg' : 'bg-blue-100 text-blue-800'}`}>遲到</button>
-                {/* V2.7: 新增 "無故缺席" 按鈕 */}
                 <button onClick={() => onStatusChange(student.id, 'absent')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'absent' ? 'bg-red-500 text-white scale-110 shadow-lg' : 'bg-red-100 text-red-800'}`}>無故缺席</button>
                 <button onClick={() => onStatusChange(student.id, 'sick')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'sick' ? 'bg-orange-500 text-white scale-110 shadow-lg' : 'bg-orange-100 text-orange-800'}`}>病假</button>
                 <button onClick={() => onStatusChange(student.id, 'leave')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'leave' ? 'bg-yellow-500 text-white scale-110 shadow-lg' : 'bg-yellow-100 text-yellow-800'}`}>事假</button>
