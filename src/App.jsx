@@ -42,14 +42,7 @@ const exportToCSV = (csvString, filename) => {
 //  StudentRow COMPONENT (with React.memo)
 // =============================================================================
 const StudentRow = React.memo(({ student, status, onStatusChange }) => {
-    // 控制是否顯示電話號碼
     const [showPhone, setShowPhone] = useState(false);
-
-    // 取得放學方式標籤 (兼顧 dismissalMethod 或 dismisslMethod 欄位命名)
-    const method = student.dismissalMethod || student.dismisslMethod;
-    let dismissalTag = '';
-    if (method === '自行回家') dismissalTag = ' (自)';
-    else if (method === '家長接送') dismissalTag = ' (家)';
 
     return (
         <div className="bg-white p-4 rounded-lg shadow-sm flex items-center justify-between">
@@ -58,7 +51,7 @@ const StudentRow = React.memo(({ student, status, onStatusChange }) => {
                     {student.verifiedClass} ({student.verifiedClassNo})
                 </span>
                 
-                {/* 姓名與放學方式標籤（可點擊） */}
+                {/* 姓名與放學方式（點擊切換顯示電話） */}
                 <button 
                     type="button"
                     onClick={() => setShowPhone(prev => !prev)}
@@ -66,14 +59,14 @@ const StudentRow = React.memo(({ student, status, onStatusChange }) => {
                     title="按一下顯示/隱藏聯絡電話"
                 >
                     <span>{student.verifiedName}</span>
-                    {dismissalTag && (
-                        <span className="ml-1 text-slate-600 font-semibold">{dismissalTag}</span>
+                    {student.dismissalMethod && (
+                        <span className="ml-1 text-blue-600 font-bold">({student.dismissalMethod})</span>
                     )}
                 </button>
 
                 {/* 點擊姓名後顯示電話 */}
                 {showPhone && (
-                    <span className="ml-1 text-sm bg-blue-50 text-blue-700 font-mono px-2.5 py-0.5 rounded-full border border-blue-200 animate-fadeIn">
+                    <span className="ml-1 text-sm bg-blue-50 text-blue-700 font-mono px-2.5 py-0.5 rounded-full border border-blue-200">
                         📞 {student.rawPhone || '無電話資料'}
                     </span>
                 )}
