@@ -234,7 +234,15 @@ const App = () => {
             setCurrentView('activityList');
         } catch (error) {
             console.error("批量更新點名狀態失敗:", error);
-            alert("儲存失敗，請檢查網絡連線。");
+            
+            // 根據 Firebase 錯誤類型給予詳細提示
+            if (error.code === 'permission-denied') {
+                alert("儲存失敗：權限不足。請檢查 Firebase Firestore 的 Security Rules 是否允許更新 'activities' 集合。");
+            } else if (error.code === 'unavailable') {
+                alert("儲存失敗：無法連接至伺服器，請檢查網絡連線。");
+            } else {
+                alert(`儲存失敗 (${error.code || '未知錯誤'})：${error.message}`);
+            }
         }
     }, [today]);
 
