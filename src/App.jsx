@@ -1,5 +1,5 @@
 // =============================================================================
-//  點名專用 APP - VERSION 2.9
+//  點名專用 APP - VERSION 3.0
 //  功能: 1. 點名加入"無故缺席"選項 2. 更新CSV圖例 3. 改善儲存密碼時的權限錯誤提示 4. 點名後同步更新 attendanceStatus
 // =============================================================================
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
@@ -418,6 +418,7 @@ const App = () => {
             <div className="p-4 md:p-8">
                 <div className="flex justify-between items-center mb-6">
                     <h1 className="text-3xl font-bold text-slate-800">今日活動點名</h1>
+                    <p className="text-sm text-slate-500 mt-1">香海正覺蓮社佛教正覺蓮社學生 - Version 3.0</p>
                     <button onClick={() => setCurrentView('adminLogin')} className="flex items-center text-sm text-slate-500 hover:text-blue-600"><Settings size={16} className="mr-1"/>Admin</button>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
