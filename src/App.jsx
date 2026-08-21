@@ -1,346 +1,493 @@
-<!DOCTYPE html>
-<html lang="zh-HK">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>香海正覺蓮社佛教正覺蓮社學校 - 權限管理雲端平台 V1.19</title>
-    
-    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+// =============================================================================
+//  點名專用 APP - VERSION 3.0
+//  功能: 1. 點名加入"無故缺席"選項 2. 更新CSV圖例 3. 改善儲存密碼時的權限錯誤提示 4. 點名後同步更新 attendanceStatus
+// =============================================================================
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { Shield, Key, List, User, Activity, LogOut, Save, Settings, MonitorPlay, Download, Circle } from 'lucide-react';
 
-    <style>
-        body { display: flex; flex-direction: column; height: 100vh; margin: 0; font-family: 'Comic Sans MS', 'Chalkboard SE', 'Fredoka One', 'Segoe UI', Tahoma, sans-serif; background-color: #ffffff; color: #333; }
-        ::-webkit-scrollbar { width: 10px; }
-        ::-webkit-scrollbar-track { background: #f1f2f6; }
-        ::-webkit-scrollbar-thumb { background: #3498db; border-radius: 5px; border: 2px solid #fff; }
+// =============================================================================
+//  FIREBASE IMPORTS & CONFIGURATION
+// =============================================================================
+import { initializeApp } from "firebase/app";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
+import { getFirestore, collection, doc, onSnapshot, updateDoc, setDoc, writeBatch } from "firebase/firestore";
 
-        #login-screen {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background-image: url('https://drive.google.com/thumbnail?id=1ndm7nhWk0SD9N6A75MmKMjcv5ecZ6_kp&sz=w2000');
-            background-size: cover; background-position: center; display: flex; justify-content: center; align-items: center; z-index: 1000;
-        }
-        #login-screen::before { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(5px); z-index: 1; }
-        .login-box { position: relative; z-index: 2; background: white; padding: 50px 40px; border-radius: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); text-align: center; max-width: 400px; width: 90%; }
-        .login-box img { width: 100px; margin-bottom: 20px; }
-        .login-box h2 { color: #546e7a; margin-top: 0; font-size: 24px; }
-        .google-btn { background-color: #fff; border: 2px solid #e0e0e0; border-radius: 30px; padding: 12px 25px; font-size: 16px; font-weight: bold; color: #333; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 15px; margin: 30px auto 0; transition: all 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-        .google-btn:hover { background-color: #f8f9fa; box-shadow: 0 6px 10px rgba(0,0,0,0.1); transform: translateY(-2px); }
-        .google-btn img { width: 24px; height: 24px; margin: 0; }
+const firebaseConfig = {
+    apiKey: "AIzaSyDXZClMosztnJBd0CK6cpS6PPtJTTpgDkQ",
+    authDomain: "school-act-directory.firebaseapp.com",
+    projectId: "school-act-directory",
+    storageBucket: "school-act-directory.firebasestorage.app",
+    messagingSenderId: "351532359820",
+    appId: "1:351532359820:web:29a353f54826ac80a41ba9",
+    measurementId: "G-K5G20KH0RH"
+};
 
-        .main-content { flex-grow: 1; display: none; flex-direction: column; overflow-y: auto; position: relative; } 
-        
-        .banner-header { position: relative; background-image: url('https://drive.google.com/thumbnail?id=1ndm7nhWk0SD9N6A75MmKMjcv5ecZ6_kp&sz=w2000'); background-size: cover; background-position: center; padding: 30px 50px; display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 6px solid #e74c3c; }
-        .banner-header::before { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(to bottom, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 1)); z-index: 1; }
-        
-        .header-content, .user-info { position: relative; z-index: 2; }
-        .header-content { display: flex; align-items: center; gap: 20px; }
-        .title-logo { width: 70px; height: auto; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1)); }
-        .header-content h1 { margin: 0; font-size: 32px; color: #546e7a; text-shadow: 2px 2px 0px #ecf0f1, 4px 4px 5px rgba(0,0,0,0.15); letter-spacing: 1px; font-weight: 900; }
-        
-        .user-info { background: #f1c40f; border: none; padding: 8px 18px; border-radius: 30px; font-size: 15px; color: #d35400; font-weight: bold; display: flex; align-items: center; gap: 10px; }
-        .logout-btn { background: #e74c3c; color: white; border: none; padding: 4px 12px; border-radius: 15px; font-size: 12px; font-weight: bold; cursor: pointer; transition: 0.2s; }
-        .logout-btn:hover { background: #c0392b; }
+const app = initializeApp(firebaseConfig, "attendanceApp");
+const auth = getAuth(app);
+const db = getFirestore(app);
 
-        .grid-container { padding: 50px; display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 35px; }
-        .app-card { background-color: transparent; border: none; border-radius: 25px; cursor: pointer; transition: all 0.3s ease; overflow: hidden; aspect-ratio: 1 / 1; position: relative; }
-        .app-card:hover { transform: scale(1.05); box-shadow: 0 10px 20px rgba(0,0,0,0.08); }
-        .app-card:active { transform: scale(0.95); }
-        .app-icon { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.3s; }
-        .restricted:hover { box-shadow: 0 10px 20px rgba(231, 76, 60, 0.15); }
+// CSV 匯出工具函式
+const exportToCSV = (csvString, filename) => {
+  const blob = new Blob(["\ufeff" + csvString], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', `${filename}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
 
-        /* 後台管理按鈕 (預設隱藏 display: none) */
-        .admin-btn { 
-            display: none; 
-            position: fixed; bottom: 30px; right: 30px; background: #2ecc71; color: #fff; border: none; padding: 15px 25px; border-radius: 30px; font-size: 16px; font-weight: bold; cursor: pointer; z-index: 100; transition: all 0.2s; box-shadow: 0 4px 10px rgba(0,0,0,0.1); 
-        }
-        .admin-btn:hover { transform: translateY(-3px); box-shadow: 0 6px 15px rgba(0,0,0,0.15); }
-        .admin-btn:active { transform: translateY(0); box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+// =============================================================================
+//  StudentRow COMPONENT (with React.memo)
+// =============================================================================
+const StudentRow = React.memo(({ student, status, onStatusChange }) => {
+    const [showPhone, setShowPhone] = useState(false);
 
-        .modal { display: none; position: fixed; z-index: 200; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.6); backdrop-filter: blur(3px); }
-        .modal-content { background: #ffffff; color: #333; border: none; box-shadow: 0 10px 30px rgba(0,0,0,0.2); margin: 5% auto; padding: 30px; border-radius: 25px; width: 90%; max-width: 500px; max-height: 80vh; overflow-y: auto; }
-        .tabs { display: flex; border-bottom: 2px solid #ecf0f1; margin-bottom: 20px; }
-        .tab { padding: 10px 20px; cursor: pointer; font-weight: bold; color: #95a5a6; }
-        .tab.active { border-bottom: 3px solid #e74c3c; color: #e74c3c; margin-bottom: -2px; }
-        .form-group { margin-bottom: 15px; }
-        .form-group label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 14px; color: #3498db; }
-        .form-group input[type="text"] { width: 100%; padding: 10px; box-sizing: border-box; border: 2px solid #bdc3c7; border-radius: 12px; background: #f8f9fa; color: #333; font-weight: bold; transition: 0.2s;}
-        .form-group input[type="text"]:focus { outline: none; border-color: #3498db; background: #fff; }
-        .btn { padding: 10px 15px; border: none; border-radius: 12px; cursor: pointer; font-weight: bold; margin-left: 5px; transition: 0.2s; }
-        .btn:hover { opacity: 0.9; }
-        .btn:active { transform: scale(0.95); }
-        .btn-green { background-color: #2ecc71; color: white; }
-        .btn-gray { background-color: #95a5a6; color: white; }
-        .btn-red { background-color: #e74c3c; color: white; }
-        .btn-blue { background-color: #3498db; color: white; }
-        .btn-small { padding: 6px 10px; font-size: 13px; }
-        .manage-list { list-style: none; padding: 0; }
-        .manage-item { display: flex; justify-content: space-between; align-items: center; padding: 15px; border: 2px solid #ecf0f1; background: #fdfefe; border-radius: 15px; margin-bottom: 10px; }
-        .manage-item-info { font-size: 15px; font-weight: bold; color: #2c3e50; }
-        .manage-actions { display: flex; gap: 8px; }
-    </style>
-</head>
-<body>
+    return (
+        <div className="bg-white p-4 rounded-lg shadow-sm flex items-center justify-between">
+            <div className="flex items-center flex-wrap gap-2">
+                <span className="text-sm bg-slate-200 text-slate-700 font-bold px-2 py-1 rounded-full">
+                    {student.verifiedClass} ({student.verifiedClassNo})
+                </span>
+                
+                {/* 姓名與放學方式（點擊切換顯示電話） */}
+                <button 
+                    type="button"
+                    onClick={() => setShowPhone(prev => !prev)}
+                    className="text-lg font-bold text-slate-800 hover:text-blue-600 transition-colors focus:outline-none cursor-pointer flex items-center"
+                    title="按一下顯示/隱藏聯絡電話"
+                >
+                    <span>{student.verifiedName}</span>
+                    {student.dismissalMethod && (
+                        <span className="ml-1 text-blue-600 font-bold">({student.dismissalMethod})</span>
+                    )}
+                </button>
 
-<div id="login-screen">
-    <div class="login-box">
-        <img src="https://drive.google.com/thumbnail?id=1wfosMc8tBrPZTmOavb6shk1R7Gnv9FUn&sz=w500" alt="校徽">
-        <h2>香海正覺蓮社<br>佛教正覺蓮社學校</h2>
-        <p style="color: #7f8c8d; font-size: 14px;">一站式教師行政平台</p>
-        <button class="google-btn" onclick="loginWithGoogle()">
-            <img src="https://cdn-icons-png.flaticon.com/512/2991/2991148.png" alt="Google"> 
-            使用 Google 帳號登入
-        </button>
-    </div>
-</div>
+                {/* 點擊姓名後顯示電話 */}
+                {showPhone && (
+                    <span className="ml-1 text-sm bg-blue-50 text-blue-700 font-mono px-2.5 py-0.5 rounded-full border border-blue-200">
+                        📞 {student.rawPhone || '無電話資料'}
+                    </span>
+                )}
+            </div>
 
-<div class="main-content" id="main-content">
-    <div class="banner-header">
-        <div class="header-content">
-            <img src="https://drive.google.com/thumbnail?id=1wfosMc8tBrPZTmOavb6shk1R7Gnv9FUn&sz=w500" alt="校徽" class="title-logo">
-            <h1>一站式教師行政平台</h1>
-        </div>
-        <div class="user-info">
-            <span id="user-name-display">🌟 讀取中...</span>
-            <button class="logout-btn" onclick="logout()">登出</button>
-        </div>
-    </div>
-    
-    <div class="grid-container" id="app-grid"></div>
-    
-    <!-- 加上 id 以便用 JavaScript 控制顯示與隱藏 -->
-    <button id="admin-btn" class="admin-btn" onclick="openAdmin()">🍄 進入後台管理</button>
-</div>
-
-<div id="adminModal" class="modal">
-    <div class="modal-content">
-        <div class="tabs">
-            <div class="tab active" id="tab-manage" onclick="switchTab('manage')">方塊管理與排序</div>
-            <div class="tab" id="tab-add" onclick="switchTab('add')">製作新方塊</div>
-        </div>
-
-        <div id="section-manage">
-            <ul class="manage-list" id="manage-list-container"></ul>
-            <div style="text-align: right; margin-top: 20px;">
-                <button class="btn btn-gray" onclick="closeAdmin()">關閉</button>
+            <div className="flex gap-2 flex-wrap justify-end">
+                <button onClick={() => onStatusChange(student.id, 'present')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'present' ? 'bg-green-500 text-white scale-110 shadow-lg' : 'bg-green-100 text-green-800'}`}>出席</button>
+                <button onClick={() => onStatusChange(student.id, 'late')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'late' ? 'bg-blue-500 text-white scale-110 shadow-lg' : 'bg-blue-100 text-blue-800'}`}>遲到</button>
+                <button onClick={() => onStatusChange(student.id, 'absent')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'absent' ? 'bg-red-500 text-white scale-110 shadow-lg' : 'bg-red-100 text-red-800'}`}>無故缺席</button>
+                <button onClick={() => onStatusChange(student.id, 'sick')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'sick' ? 'bg-orange-500 text-white scale-110 shadow-lg' : 'bg-orange-100 text-orange-800'}`}>病假</button>
+                <button onClick={() => onStatusChange(student.id, 'leave')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'leave' ? 'bg-yellow-500 text-white scale-110 shadow-lg' : 'bg-yellow-100 text-yellow-800'}`}>事假</button>
+                <button onClick={() => onStatusChange(student.id, 'unknown')} className={`px-3 py-1.5 text-sm font-bold rounded-full transition-all ${status === 'unknown' ? 'bg-gray-500 text-white scale-110 shadow-lg' : 'bg-gray-100 text-gray-800'}`}>未知</button>
             </div>
         </div>
+    );
+});
 
-        <div id="section-add" style="display:none;">
-            <input type="hidden" id="editIndex" value="-1">
-            <div class="form-group">
-                <label>1. 方塊名稱：</label>
-                <input type="text" id="appNameInput" placeholder="例如：教育局網頁">
-            </div>
-            <div class="form-group">
-                <label>2. 圖片來源 (Google Drive 連結)：</label>
-                <input type="text" id="appImgInput" placeholder="貼上圖片連結">
-            </div>
-            <div class="form-group">
-                <label>3. 傳送連結 (Hyperlink)：</label>
-                <input type="text" id="appLinkInput" placeholder="例如：https://www.edb.gov.hk">
-            </div>
-            <div class="form-group">
-                <label style="color: #e74c3c;"><input type="checkbox" id="appRestrictedInput"> ⚠️ 鎖定 (需要密碼驗證)</label>
-            </div>
-            <div style="text-align: right; margin-top: 20px;">
-                <button class="btn btn-gray" onclick="switchTab('manage')">取消</button>
-                <button class="btn btn-green" id="saveBtn" onclick="saveApp()">確認建造</button>
-            </div>
-        </div>
-    </div>
-</div>
+// =============================================================================
+//  AttendanceSheetView COMPONENT
+// =============================================================================
+const AttendanceSheetView = ({ activityName, students, today, onSave, onCancel }) => {
+    const [attendance, setAttendance] = useState({});
+    const [isSaving, setIsSaving] = useState(false);
 
-<script>
-    // ⭐️ 在這裡設定授權的管理員 Email 名單
-    const ADMIN_EMAILS = [
-        'lwysams@bcklas.edu.hk',
-        'slssams@bcklas.edu.hk'
-    ];
+    useEffect(() => {
+        const initialState = {};
+        students.forEach(student => {
+            const currentStatus = student.attendance?.[today];
+            if (currentStatus) {
+                initialState[student.id] = currentStatus;
+            }
+        });
+        setAttendance(initialState);
+    }, [students, today]);
 
-    const firebaseConfig = {
-        apiKey: "AIzaSyAEM_hyUZMXN3QJ4dRSi-fZ2qd8vUhMc2g",
-        authDomain: "it-portal-8294b.firebaseapp.com",
-        projectId: "it-portal-8294b",
-        storageBucket: "it-portal-8294b.firebasestorage.app",
-        messagingSenderId: "49238104967",
-        appId: "1:49238104967:web:3c32f8cc8496eb86fe9122"
+    const handleSetAttendance = useCallback((studentId, status) => {
+        setAttendance(prev => ({
+            ...prev,
+            [studentId]: status
+        }));
+    }, []);
+
+    const handleSave = async () => {
+        setIsSaving(true);
+        await onSave(attendance);
+        setIsSaving(false);
     };
 
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
-    const auth = firebase.auth();
-    const googleProvider = new firebase.auth.GoogleAuthProvider();
-
-    let appsData = [];
-    let dbUnsubscribe = null;
-
-    auth.onAuthStateChanged((user) => {
-        if (user) {
-            document.getElementById('login-screen').style.display = 'none';
-            document.getElementById('main-content').style.display = 'flex';
-            document.getElementById('user-name-display').innerText = `🌟 歡迎, ${user.displayName}`;
+    return (
+        <div className="p-4 md:p-8 flex flex-col h-screen">
+            <div className="flex-shrink-0">
+                <button onClick={onCancel} className="mb-4 text-blue-600 font-bold">← 返回活動列表</button>
+                <h1 className="text-3xl font-bold text-slate-800">{activityName}</h1>
+                <p className="text-slate-500 mb-6">日期: {today}</p>
+            </div>
             
-            // ⭐️ 檢查 Email 是否在管理員名單中，是的話才顯示後台按鈕
-            if (ADMIN_EMAILS.includes(user.email)) {
-                document.getElementById('admin-btn').style.display = 'block';
-            } else {
-                document.getElementById('admin-btn').style.display = 'none';
-            }
-
-            loadData();
-        } else {
-            document.getElementById('login-screen').style.display = 'flex';
-            document.getElementById('main-content').style.display = 'none';
-            document.getElementById('admin-btn').style.display = 'none'; // 登出時隱藏按鈕
-            if (dbUnsubscribe) dbUnsubscribe(); 
-        }
-    });
-
-    window.loginWithGoogle = function() {
-        auth.signInWithPopup(googleProvider).catch((error) => {
-            console.error("登入失敗", error);
-            alert("登入失敗：" + error.message);
-        });
-    }
-
-    window.logout = function() { auth.signOut(); }
-
-    const defaultApps = [
-        { name: '學校行事曆', img: 'https://cdn-icons-png.flaticon.com/512/2693/2693507.png', url: 'https://www.google.com/calendar', restricted: false },
-        { name: '副校長編堂工具', img: 'https://cdn-icons-png.flaticon.com/512/3064/3064197.png', url: '#', restricted: true }
-    ];
-
-    function loadData() {
-        dbUnsubscribe = db.collection("school_portal").doc("apps_data").onSnapshot((doc) => {
-            if (doc.exists && doc.data().list && doc.data().list.length > 0) {
-                appsData = doc.data().list;
-            } else {
-                appsData = JSON.parse(JSON.stringify(defaultApps));
-                // 如果是管理員才執行初始寫入，避免一般老師讀不到報錯
-                if (auth.currentUser && ADMIN_EMAILS.includes(auth.currentUser.email)) {
-                    saveData(); 
-                }
-            }
-            renderApps();
-            renderManageList();
-        });
-    }
-
-    function saveData() {
-        db.collection("school_portal").doc("apps_data").set({ list: appsData }).catch(err => {
-            console.error("儲存失敗", err);
-            alert("儲存失敗：您可能沒有權限寫入資料庫！");
-        });
-    }
-
-    function convertDriveLink(url) {
-        const driveRegex = /drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/;
-        const match = url.match(driveRegex);
-        return (match && match[1]) ? `https://drive.google.com/thumbnail?id=${match[1]}&sz=w1000` : url; 
-    }
-
-    function renderApps() {
-        const grid = document.getElementById('app-grid');
-        grid.innerHTML = ''; 
-        appsData.forEach((app, index) => {
-            const card = document.createElement('div');
-            card.className = app.restricted ? 'app-card restricted' : 'app-card';
-            card.title = app.name; 
-            
-            card.onclick = () => {
-                if (app.restricted) {
-                    // ⭐️ 這裡設定鎖定方塊的進入密碼！目前設定為 '123456'
-                    let password = prompt('🔥 此為機密區域，請輸入通關密碼：');
-                    if (password === '123456') { 
-                        if (app.url !== '#') window.open(app.url, '_blank');
-                    } else if (password !== null) {
-                        alert('❌ 密碼錯誤！');
-                    }
-                } else {
-                    if (app.url !== '#') window.open(app.url, '_blank');
-                }
-            };
-            
-            card.innerHTML = `<img src="${app.img}" class="app-icon" alt="${app.name}" onerror="this.src='https://cdn-icons-png.flaticon.com/512/1006/1006490.png'">`;
-            grid.appendChild(card);
-        });
-    }
-
-    function renderManageList() {
-        const list = document.getElementById('manage-list-container');
-        list.innerHTML = '';
-        if (appsData.length === 0) return;
-        
-        appsData.forEach((app, index) => {
-            const li = document.createElement('li');
-            li.className = 'manage-item';
-            li.innerHTML = `
-                <div class="manage-item-info">${app.name} ${app.restricted ? '🔒' : ''}</div>
-                <div class="manage-actions">
-                    <button class="btn btn-gray btn-small" onclick="moveApp(${index}, -1)">⬆️</button>
-                    <button class="btn btn-gray btn-small" onclick="moveApp(${index}, 1)">⬇️</button>
-                    <button class="btn btn-blue btn-small" onclick="editApp(${index})">修改</button>
-                    <button class="btn btn-red btn-small" onclick="deleteApp(${index})">刪除</button>
+            <div className="flex-grow overflow-y-auto pb-24">
+                <div className="space-y-2">
+                    {students.map(student => (
+                        <StudentRow 
+                            key={student.id} 
+                            student={student} 
+                            status={attendance[student.id]} 
+                            onStatusChange={handleSetAttendance}
+                        />
+                    ))}
                 </div>
-            `;
-            list.appendChild(li);
+            </div>
+
+            <div className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-sm p-4 border-t-2">
+                <button onClick={handleSave} disabled={isSaving || Object.keys(attendance).length === 0} className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl text-lg flex items-center justify-center disabled:bg-gray-400">
+                    {isSaving ? '儲存中...' : `儲存 ${Object.keys(attendance).length} 項記錄`}
+                </button>
+            </div>
+        </div>
+    );
+};
+
+// =============================================================================
+//  主應用程式組件 (App)
+// =============================================================================
+const App = () => {
+    const [user, setUser] = useState(null);
+    const [activities, setActivities] = useState([]);
+    const [activityConfigs, setActivityConfigs] = useState({});
+    const [currentView, setCurrentView] = useState('activityList');
+    const [selectedActivity, setSelectedActivity] = useState(null);
+    const [passwordInput, setPasswordInput] = useState('');
+    const [authError, setAuthError] = useState('');
+
+    useEffect(() => {
+        const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
+            setUser(currentUser);
+            // 如果登出，自動導回首頁
+            if (!currentUser) {
+                setCurrentView('activityList');
+            }
         });
-    }
+        
+        const unsubscribeActivities = onSnapshot(collection(db, "activities"), (snapshot) => {
+            const validDocs = snapshot.docs
+                .map(doc => ({ id: doc.id, ...doc.data() }))
+                .filter(doc => doc.activity); // 過濾掉沒有活動名稱的異常數據
+            setActivities(validDocs);
+        });
+        
+        const unsubscribeConfigs = onSnapshot(collection(db, "activity_configs"), (snapshot) => {
+            const configs = {};
+            snapshot.forEach(doc => { configs[doc.id] = doc.data(); });
+            setActivityConfigs(configs);
+        });
+        
+        // 只在組件載入時執行一次，切換頁面不中斷連線
+        return () => { unsubscribeAuth(); unsubscribeActivities(); unsubscribeConfigs(); };
+    }, []);
 
-    window.moveApp = function(index, direction) {
-        if (index + direction < 0 || index + direction >= appsData.length) return;
-        const temp = appsData[index];
-        appsData[index] = appsData[index + direction];
-        appsData[index + direction] = temp;
-        saveData();
-    }
-    window.deleteApp = function(index) {
-        if(confirm('確定要把「' + appsData[index].name + '」刪除嗎？')) { appsData.splice(index, 1); saveData(); }
-    }
-    window.editApp = function(index) {
-        const app = appsData[index];
-        document.getElementById('editIndex').value = index;
-        document.getElementById('appNameInput').value = app.name;
-        document.getElementById('appImgInput').value = app.img;
-        document.getElementById('appLinkInput').value = app.url;
-        document.getElementById('appRestrictedInput').checked = app.restricted;
-        switchTab('add');
-    }
-    window.saveApp = function() {
-        const index = parseInt(document.getElementById('editIndex').value);
-        const name = document.getElementById('appNameInput').value;
-        let img = document.getElementById('appImgInput').value || 'https://cdn-icons-png.flaticon.com/512/1006/1006490.png'; 
-        const link = document.getElementById('appLinkInput').value || '#'; 
-        const restricted = document.getElementById('appRestrictedInput').checked;
-        if (name.trim() === '') return alert('請輸入方塊名稱！');
-        img = convertDriveLink(img);
-        const newData = { name, img, url: link, restricted };
-        if (index === -1) appsData.push(newData); else appsData[index] = newData;
-        saveData();
-        switchTab('manage');
-    }
+    const today = useMemo(() => new Date().toLocaleDateString('en-CA'), []);
 
-    window.openAdmin = function() { 
-        // 雙重檢查：如果不是管理員呼叫此函數，則阻擋
-        if (auth.currentUser && !ADMIN_EMAILS.includes(auth.currentUser.email)) {
-            alert("您沒有後台管理權限！");
-            return;
+    const todaysActivities = useMemo(() => {
+        const uniqueActivityNames = new Set();
+        const currentDayId = new Date().getDay();
+        activities.forEach(act => {
+            const isRegularDay = act.dayIds && act.dayIds.includes(currentDayId);
+            const isSpecificDate = act.specificDates?.includes(today);
+            if ((isRegularDay && !act.specificDates?.length) || isSpecificDate) {
+                 uniqueActivityNames.add(act.activity);
+            }
+        });
+        return Array.from(uniqueActivityNames).sort();
+    }, [activities, today]);
+    
+    const studentsForSelectedActivity = useMemo(() => {
+        if (!selectedActivity) return [];
+        return activities
+            .filter(act => act.activity === selectedActivity)
+            .sort((a,b) => `${a.verifiedClass}-${a.verifiedClassNo}`.localeCompare(`${b.verifiedClass}-${b.verifiedClassNo}`));
+    }, [activities, selectedActivity]);
+
+    const handleActivitySelect = (activityName) => {
+        setSelectedActivity(activityName);
+        setPasswordInput('');
+        setAuthError('');
+    };
+    
+    const handlePasswordSubmit = () => {
+        const config = activityConfigs[selectedActivity];
+        if (config && config.password === passwordInput) {
+            setCurrentView('attendanceSheet');
+        } else {
+            setAuthError('密碼錯誤，請重試。');
+            setPasswordInput('');
         }
-        document.getElementById('adminModal').style.display = 'block'; switchTab('manage'); 
-    }
-    window.closeAdmin = function() { document.getElementById('adminModal').style.display = 'none'; }
-    window.switchTab = function(tab) {
-        document.getElementById('tab-manage').className = tab === 'manage' ? 'tab active' : 'tab';
-        document.getElementById('tab-add').className = tab === 'add' ? 'tab active' : 'tab';
-        document.getElementById('section-manage').style.display = tab === 'manage' ? 'block' : 'none';
-        document.getElementById('section-add').style.display = tab === 'add' ? 'block' : 'none';
-        if (tab === 'add' && document.getElementById('editIndex').value === '-1') {
-            document.getElementById('appNameInput').value = ''; document.getElementById('appImgInput').value = '';
-            document.getElementById('appLinkInput').value = ''; document.getElementById('appRestrictedInput').checked = false;
-        } else if (tab === 'manage') document.getElementById('editIndex').value = '-1';
-    }
-</script>
+    };
+    
+    const handleSaveAttendance = useCallback(async (attendanceData) => {
+        if (Object.keys(attendanceData).length === 0) return alert("沒有需要儲存的點名記錄。");
+        try {
+            const batch = writeBatch(db);
+            Object.entries(attendanceData).forEach(([studentDocId, status]) => {
+                const activityRef = doc(db, "activities", studentDocId);
+                // V2.9: 新增同步寫入 attendanceStatus 欄位
+                batch.update(activityRef, { 
+                    [`attendance.${today}`]: status,
+                    "attendanceStatus": status
+                });
+            });
+            await batch.commit();
+            alert("點名記錄已成功儲存！");
+            setCurrentView('activityList');
+        } catch (error) {
+            console.error("批量更新點名狀態失敗:", error);
+            
+            // 根據 Firebase 錯誤類型給予詳細提示
+            if (error.code === 'permission-denied') {
+                alert("儲存失敗：權限不足。請檢查 Firebase Firestore 的 Security Rules 是否允許更新 'activities' 集合。");
+            } else if (error.code === 'unavailable') {
+                alert("儲存失敗：無法連接至伺服器，請檢查網絡連線。");
+            } else {
+                alert(`儲存失敗 (${error.code || '未知錯誤'})：${error.message}`);
+            }
+        }
+    }, [today]);
 
-</body>
-</html>
+    const handleAdminLogin = async (email, password) => {
+        try { await signInWithEmailAndPassword(auth, email, password); setCurrentView('adminConsole'); } 
+        catch (error) { alert("Admin 登入失敗: " + error.message); }
+    };
+
+    const handleAdminLogout = async () => { await signOut(auth); setCurrentView('activityList'); };
+
+    const handleSaveConfig = async (activityName, password) => {
+        if (password.length !== 4) return alert("密碼必須為4位英文或數字！");
+        try {
+            await setDoc(doc(db, "activity_configs", activityName), { password }, { merge: true });
+            alert(`「${activityName}」的密碼已更新。`);
+        } catch (error) {
+            if (error.code === 'permission-denied') {
+                alert("儲存失敗：權限不足。請檢查 Firebase Firestore 的 Security Rules (安全規則) 是否允許寫入 'activity_configs'。");
+            } else {
+                alert("儲存失敗：" + error.message); 
+            }
+        }
+    };
+    
+    // 更新 CSV 匯出邏輯
+    const handleExportCSV = (activityName) => {
+        const students = activities.filter(act => act.activity === activityName);
+        if (students.length === 0) return alert("沒有學生資料可匯出。");
+
+        const { location = '', time = '' } = students[0];
+        const allDates = new Set();
+        students.forEach(s => s.attendance && Object.keys(s.attendance).forEach(date => allDates.add(date)));
+        const sortedDates = Array.from(allDates).sort();
+
+        const symbolMap = { present: '✓', absent: 'A', sick: 'S', leave: 'L', late: 'L', unknown: '?' };
+        
+        let csvContent = `"${activityName} 出席總表"\n"地點：","${location}"\n"時間：","${time}"\n`;
+        const studentHeaders = ['班別', '學號', '姓名', '性別', '電話'];
+        const monthRow = [...studentHeaders, '月'];
+        const dayRow = [...Array(studentHeaders.length).fill(''), '日'];
+        
+        let lastMonth = '';
+        sortedDates.forEach(date => {
+            const d = new Date(date);
+            const month = d.getMonth() + 1;
+            const day = d.getDate();
+            monthRow.push(month.toString() !== lastMonth ? month : '');
+            lastMonth = month.toString();
+            dayRow.push(day);
+        });
+        csvContent += [monthRow, dayRow].map(row => row.map(field => `"${field}"`).join(',')).join('\n') + '\n';
+        
+        students.sort((a,b) => `${a.verifiedClass}-${a.verifiedClassNo}`.localeCompare(`${b.verifiedClass}-${b.verifiedClassNo}`))
+            .forEach(s => {
+                const studentData = [s.verifiedClass, s.verifiedClassNo, s.verifiedName, s.sex, s.rawPhone].map(f => f || '');
+                const attendanceData = sortedDates.map(date => symbolMap[s.attendance?.[date]] || '');
+                csvContent += [...studentData, '', ...attendanceData].map(field => `"${String(field)}"`).join(',') + '\n';
+            });
+        
+        // 更新圖例
+        csvContent += '\n\n';
+        csvContent += '"圖例:",\n';
+        csvContent += '"✓","出席 (Present)"\n';
+        csvContent += '"L","遲到 (Late)"\n';
+        csvContent += '"S","病假 (Sick)"\n';
+        csvContent += '"L","事假 (Leave)"\n';
+        csvContent += '"A","無故缺席 (Absent)"\n';
+        csvContent += '"?","未知 (Unknown)"\n';
+
+        exportToCSV(csvContent, `${activityName}_出席總表`);
+    };
+
+    // --- 視圖渲染 ---
+    const AdminLoginView = () => {  
+        const [email, setEmail] = useState('');
+        const [password, setPassword] = useState('');
+        return (
+            <div className="flex flex-col items-center justify-center p-8">
+                <div className="w-full max-w-sm p-8 bg-white rounded-2xl shadow-lg">
+                    <div className="text-center mb-6">
+                        <Shield size={40} className="mx-auto text-slate-500" />
+                        <h2 className="text-2xl font-bold text-slate-800 mt-2">Admin Console</h2>
+                    </div>
+                    <input type="email" placeholder="電郵" value={email} onChange={e => setEmail(e.target.value)} className="w-full p-3 mb-4 border rounded-lg" />
+                    <input type="password" placeholder="密碼" value={password} onChange={e => setPassword(e.target.value)} className="w-full p-3 mb-4 border rounded-lg" />
+                    <button onClick={() => handleAdminLogin(email, password)} className="w-full bg-slate-800 text-white py-3 rounded-lg font-bold">登入</button>
+                    <button onClick={() => setCurrentView('activityList')} className="w-full mt-2 text-slate-500 py-2">返回活動列表</button>
+                </div>
+            </div>
+        );
+    };
+
+    const AdminConsoleView = () => { 
+        // 加入 Boolean 過濾，確保不會因為 undefined 導致 .sort() 崩潰或渲染空白
+        const allActivityNames = useMemo(() => {
+            const names = activities.map(a => a.activity).filter(Boolean);
+            return Array.from(new Set(names)).sort();
+        }, [activities]);
+        
+        const [passwords, setPasswords] = useState({});
+
+        const todayAttendanceStatus = useMemo(() => {
+            const status = {};
+            todaysActivities.forEach(name => {
+                const studentsInActivity = activities.filter(a => a.activity === name);
+                const totalStudents = studentsInActivity.length;
+                if (totalStudents === 0) return;
+                const attendedCount = studentsInActivity.filter(s => s.attendance && s.attendance[today]).length;
+                if (attendedCount === 0) status[name] = 'not_started';
+                else if (attendedCount < totalStudents) status[name] = 'in_progress';
+                else status[name] = 'completed';
+            });
+            return status;
+        }, [activities, todaysActivities, today]);
+
+        const statusColors = { completed: 'bg-green-500', in_progress: 'bg-yellow-500', not_started: 'bg-red-500' };
+        const statusText = { completed: '已完成', in_progress: '進行中', not_started: '未開始' };
+
+        return (
+            <div className="p-4 md:p-8">
+                <div className="flex justify-between items-center mb-6">
+                    <h1 className="text-3xl font-bold text-slate-800 flex items-center"><Settings className="mr-2"/> Admin Console</h1>
+                    <button onClick={handleAdminLogout} className="flex items-center bg-red-500 text-white px-4 py-2 rounded-lg"><LogOut size={16} className="mr-2"/>登出</button>
+                </div>
+                
+                <div className="mb-8 bg-white p-6 rounded-xl shadow-md">
+                     <h2 className="text-xl font-bold mb-4 text-slate-700 flex items-center"><MonitorPlay className="mr-2"/> 今日點名狀態總覽</h2>
+                     <div className="space-y-3">
+                         {todaysActivities.length > 0 ? todaysActivities.map(name => (
+                             <div key={name} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                                <span className="font-semibold text-slate-700">{name}</span>
+                                <div className="flex items-center gap-2">
+                                    <Circle size={12} className={`text-white ${statusColors[todayAttendanceStatus[name]] || 'bg-gray-300'}`} fill="currentColor" />
+                                    <span className="text-sm text-slate-500 w-16 text-right">{statusText[todayAttendanceStatus[name]] || '未知'}</span>
+                                </div>
+                             </div>
+                         )) : <p className="text-center text-slate-400 py-4">今天沒有活動</p>}
+                     </div>
+                </div>
+
+                <div className="bg-white p-6 rounded-xl shadow-md">
+                    <h2 className="text-xl font-bold mb-4 text-slate-700">活動管理</h2>
+                    <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-2">
+                        {allActivityNames.map(name => (
+                            <div key={name} className="flex items-center gap-2 p-3 bg-slate-50 rounded-lg">
+                                <span className="flex-1 font-semibold text-slate-600 truncate">{name}</span>
+                                <input 
+                                    type="text" maxLength="4" placeholder="4位英數"
+                                    defaultValue={activityConfigs[name]?.password || ''}
+                                    onChange={(e) => setPasswords(prev => ({...prev, [name]: e.target.value}))}
+                                    className="w-32 p-2 border rounded-md text-center font-mono"
+                                />
+                                <button onClick={() => passwords[name] && handleSaveConfig(name, passwords[name])} className="bg-blue-600 text-white p-2 rounded-lg disabled:bg-slate-300" disabled={!passwords[name]}>
+                                    <Save size={20}/>
+                                </button>
+                                <button onClick={() => handleExportCSV(name)} className="bg-green-600 text-white p-2 rounded-lg">
+                                    <Download size={20}/>
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    const ActivityListView = () => { 
+        return (
+            <div className="p-4 md:p-8">
+                <div className="flex justify-between items-center mb-6">
+                    <h1 className="text-3xl font-bold text-slate-800">今日活動點名</h1>
+                    <p className="text-sm text-slate-500 mt-1">香海正覺蓮社佛教正覺蓮社學校 - Version 3.0</p>
+                    <button onClick={() => setCurrentView('adminLogin')} className="flex items-center text-sm text-slate-500 hover:text-blue-600"><Settings size={16} className="mr-1"/>Admin</button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {todaysActivities.map(name => (
+                        <button key={name} onClick={() => handleActivitySelect(name)} className="bg-white p-6 rounded-xl shadow-md text-left hover:shadow-lg hover:ring-2 hover:ring-blue-500 transition-all">
+                            <div className="flex items-center">
+                                <div className="p-3 bg-blue-100 rounded-lg mr-4"><Activity size={24} className="text-blue-600"/></div>
+                                <span className="text-xl font-bold text-slate-800">{name}</span>
+                            </div>
+                        </button>
+                    ))}
+                    {todaysActivities.length === 0 && <p className="text-slate-500 col-span-full text-center py-10">今天沒有已安排的活動。</p>}
+                </div>
+            </div>
+        );
+    };
+    
+    const PasswordModal = () => { 
+        return (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setSelectedActivity(null)}>
+                <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-xs text-center" onClick={e => e.stopPropagation()}>
+                    <Key size={32} className="mx-auto text-slate-400 mb-4"/>
+                    <h3 className="text-lg font-bold mb-2">{selectedActivity}</h3>
+                    <p className="text-sm text-slate-500 mb-4">請輸入4位數字點名密碼</p>
+                    <input 
+                        type="password" maxLength="4" value={passwordInput}
+                        onChange={(e) => setPasswordInput(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handlePasswordSubmit()}
+                        className="w-full p-4 text-3xl tracking-[1rem] text-center border-2 rounded-lg mb-4"
+                        autoFocus
+                    />
+                    {authError && <p className="text-red-500 text-sm mb-4">{authError}</p>}
+                    <button onClick={handlePasswordSubmit} className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg">進入</button>
+                </div>
+            </div>
+        );
+    };
+
+    // --- 主渲染邏輯 ---
+    const renderContent = () => {
+        switch (currentView) {
+            case 'activityList':
+                return <ActivityListView />;
+            case 'attendanceSheet':
+                return (
+                    <AttendanceSheetView
+                        key={selectedActivity}
+                        activityName={selectedActivity}
+                        students={studentsForSelectedActivity}
+                        today={today}
+                        onSave={handleSaveAttendance}
+                        onCancel={() => setCurrentView('activityList')}
+                    />
+                );
+            case 'adminLogin':
+                return <AdminLoginView />;
+            case 'adminConsole':
+                return user ? <AdminConsoleView /> : <AdminLoginView />;
+            default:
+                return <ActivityListView />;
+        }
+    };
+
+    return (
+        <div className="bg-slate-100 min-h-screen font-sans">
+            {renderContent()}
+            {currentView === 'activityList' && selectedActivity && <PasswordModal />}
+        </div>
+    );
+};
+
+export default App;
