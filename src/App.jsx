@@ -311,9 +311,9 @@ const App = () => {
         csvContent += '"圖例:",\n';
         csvContent += '"✓","出席 (Present)"\n';
         csvContent += '"L","遲到 (Late)"\n';
-        csvContent += '"S","病假 (Sick)"\n';
-        csvContent += '"L","事假 (Leave)"\n';
-        csvContent += '"A","無故缺席 (Absent)"\n';
+        csvContent += '"SL","病假 (Sick)"\n';
+        csvContent += '"Lv","事假 (Leave)"\n';
+        csvContent += '"Abs","無故缺席 (Absent)"\n';
         csvContent += '"?","未知 (Unknown)"\n';
 
         exportToCSV(csvContent, `${activityName}_出席總表`);
@@ -418,7 +418,7 @@ const App = () => {
             <div className="p-4 md:p-8">
                 <div className="flex justify-between items-center mb-6">
                     <h1 className="text-3xl font-bold text-slate-800">今日點名</h1>
-                    <p className="text-sm text-slate-500 mt-1">香海正覺蓮社佛教正覺蓮社學校 - Version 3.0</p>
+                    <p className="text-sm text-slate-500 mt-1">香海正覺蓮社佛教正覺蓮社學校 - Version 3.01</p>
                     <button onClick={() => setCurrentView('adminLogin')} className="flex items-center text-sm text-slate-500 hover:text-blue-600"><Settings size={16} className="mr-1"/>Admin</button>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
