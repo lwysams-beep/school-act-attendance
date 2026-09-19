@@ -281,7 +281,7 @@ const App = () => {
         students.forEach(s => s.attendance && Object.keys(s.attendance).forEach(date => allDates.add(date)));
         const sortedDates = Array.from(allDates).sort();
 
-        const symbolMap = { present: '✓', absent: 'A', sick: 'S', leave: 'L', late: 'L', unknown: '?' };
+        const symbolMap = { present: '✓', absent: 'Abs', sick: 'SL', leave: 'Lv', late: 'L', unknown: '?' };
         
         let csvContent = `"${activityName} 出席總表"\n"地點：","${location}"\n"時間：","${time}"\n`;
         const studentHeaders = ['班別', '學號', '姓名', '性別', '電話'];
