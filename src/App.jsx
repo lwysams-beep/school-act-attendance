@@ -1,8 +1,9 @@
 // =============================================================================
-//  點名專用 APP - VERSION 3.0
+//  點名專用 APP - VERSION 3.1
+//  修正：逐項即時儲存、避免即時監聽重設未提交狀態、顯示同步狀態
 //  功能: 1. 點名加入"無故缺席"選項 2. 更新CSV圖例 3. 改善儲存密碼時的權限錯誤提示 4. 點名後同步更新 attendanceStatus
 // =============================================================================
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Shield, Key, List, User, Activity, LogOut, Save, Settings, MonitorPlay, Download, Circle } from 'lucide-react';
 
 // =============================================================================
@@ -41,7 +42,7 @@ const exportToCSV = (csvString, filename) => {
 // =============================================================================
 //  StudentRow COMPONENT (with React.memo)
 // =============================================================================
-const StudentRow = React.memo(({ student, status, onStatusChange }) => {
+const StudentRow = React.memo(({ student, status, saveStatus, onStatusChange }) => {
     const [showPhone, setShowPhone] = useState(false);
 
     return (
@@ -63,6 +64,15 @@ const StudentRow = React.memo(({ student, status, onStatusChange }) => {
                         <span className="ml-1 text-blue-600 font-bold">({student.dismissalMethod})</span>
                     )}
                 </button>
+                {saveStatus === 'saving' && (
+                    <span className="text-xs text-blue-600" role="status">儲存中…</span>
+                )}
+                {saveStatus === 'saved' && (
+                    <span className="text-xs text-green-600" role="status">已同步</span>
+                )}
+                {saveStatus === 'error' && (
+                    <span className="text-xs text-red-600" role="status">同步失敗，請按「儲存」重試</span>
+                )}
 
                 {/* 點擊姓名後顯示電話 */}
                 {showPhone && (
@@ -87,32 +97,50 @@ const StudentRow = React.memo(({ student, status, onStatusChange }) => {
 // =============================================================================
 //  AttendanceSheetView COMPONENT
 // =============================================================================
-const AttendanceSheetView = ({ activityName, students, today, onSave, onCancel }) => {
-    const [attendance, setAttendance] = useState({});
-    const [isSaving, setIsSaving] = useState(false);
-
-    useEffect(() => {
+const AttendanceSheetView = ({ activityName, students, today, onSave, onSaveSingle, onCancel }) => {
+    // 只在點名頁建立時讀取一次初始資料。
+    // 不再依賴每次 onSnapshot 更新後的新 students 陣列，避免覆蓋老師尚未提交的畫面狀態。
+    const [attendance, setAttendance] = useState(() => {
         const initialState = {};
         students.forEach(student => {
             const currentStatus = student.attendance?.[today];
-            if (currentStatus) {
-                initialState[student.id] = currentStatus;
-            }
+            if (currentStatus) initialState[student.id] = currentStatus;
         });
-        setAttendance(initialState);
-    }, [students, today]);
+        return initialState;
+    });
+    const [saveStatusByStudent, setSaveStatusByStudent] = useState({});
+    const [isSaving, setIsSaving] = useState(false);
+    const latestRequestByStudent = useRef({});
 
-    const handleSetAttendance = useCallback((studentId, status) => {
-        setAttendance(prev => ({
-            ...prev,
-            [studentId]: status
-        }));
-    }, []);
+    const handleSetAttendance = useCallback(async (studentId, status) => {
+        // 先即時更新畫面，避免等待網絡期間按鈕沒有反應。
+        setAttendance(prev => ({ ...prev, [studentId]: status }));
+
+        const requestId = (latestRequestByStudent.current[studentId] || 0) + 1;
+        latestRequestByStudent.current[studentId] = requestId;
+        setSaveStatusByStudent(prev => ({ ...prev, [studentId]: 'saving' }));
+
+        try {
+            await onSaveSingle(studentId, status);
+            // 只讓該學生最後一次操作更新狀態，避免較早的請求覆蓋較新的提示。
+            if (latestRequestByStudent.current[studentId] === requestId) {
+                setSaveStatusByStudent(prev => ({ ...prev, [studentId]: 'saved' }));
+            }
+        } catch (error) {
+            console.error('單筆點名即時儲存失敗:', error);
+            if (latestRequestByStudent.current[studentId] === requestId) {
+                setSaveStatusByStudent(prev => ({ ...prev, [studentId]: 'error' }));
+            }
+        }
+    }, [onSaveSingle]);
 
     const handleSave = async () => {
         setIsSaving(true);
-        await onSave(attendance);
-        setIsSaving(false);
+        try {
+            await onSave(attendance);
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     return (
@@ -129,7 +157,8 @@ const AttendanceSheetView = ({ activityName, students, today, onSave, onCancel }
                         <StudentRow 
                             key={student.id} 
                             student={student} 
-                            status={attendance[student.id]} 
+                            status={attendance[student.id]}
+                            saveStatus={saveStatusByStudent[student.id]}
                             onStatusChange={handleSetAttendance}
                         />
                     ))}
@@ -137,6 +166,9 @@ const AttendanceSheetView = ({ activityName, students, today, onSave, onCancel }
             </div>
 
             <div className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-sm p-4 border-t-2">
+                <p className="text-xs text-slate-600 text-center mb-2">
+                    每次點名會即時同步至 Firebase；底部「儲存」可作整班核對及補存。
+                </p>
                 <button onClick={handleSave} disabled={isSaving || Object.keys(attendance).length === 0} className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl text-lg flex items-center justify-center disabled:bg-gray-400">
                     {isSaving ? '儲存中...' : `儲存 ${Object.keys(attendance).length} 項記錄`}
                 </button>
@@ -156,6 +188,8 @@ const App = () => {
     const [selectedActivity, setSelectedActivity] = useState(null);
     const [passwordInput, setPasswordInput] = useState('');
     const [authError, setAuthError] = useState('');
+    // 同一學生的寫入依次執行，避免快速連按時較早的狀態最後才寫入。
+    const singleWriteQueues = useRef(new Map());
 
     useEffect(() => {
         const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
@@ -221,9 +255,38 @@ const App = () => {
         }
     };
     
+    const handleSaveSingleAttendance = useCallback(async (studentDocId, status) => {
+        const previousWrite = singleWriteQueues.current.get(studentDocId) || Promise.resolve();
+        const currentWrite = previousWrite
+            .catch(() => {
+                // 即使上一筆失敗，也容許新一次點名操作繼續嘗試。
+            })
+            .then(() => {
+                const activityRef = doc(db, "activities", studentDocId);
+                return updateDoc(activityRef, {
+                    [`attendance.${today}`]: status,
+                    attendanceStatus: status
+                });
+            });
+
+        singleWriteQueues.current.set(studentDocId, currentWrite);
+        try {
+            await currentWrite;
+        } finally {
+            if (singleWriteQueues.current.get(studentDocId) === currentWrite) {
+                singleWriteQueues.current.delete(studentDocId);
+            }
+        }
+    }, [today]);
+
     const handleSaveAttendance = useCallback(async (attendanceData) => {
         if (Object.keys(attendanceData).length === 0) return alert("沒有需要儲存的點名記錄。");
         try {
+            // 等候正在進行的即時寫入，然後再作整班核對／補存。
+            await Promise.all(
+                Array.from(singleWriteQueues.current.values()).map(write => write.catch(() => {}))
+            );
+
             const batch = writeBatch(db);
             Object.entries(attendanceData).forEach(([studentDocId, status]) => {
                 const activityRef = doc(db, "activities", studentDocId);
@@ -417,8 +480,8 @@ const App = () => {
         return (
             <div className="p-4 md:p-8">
                 <div className="flex justify-between items-center mb-6">
-                    <h1 className="text-3xl font-bold text-slate-800">今日點名</h1>
-                    <p className="text-sm text-slate-500 mt-1">香海正覺蓮社佛教正覺蓮社學校 - Version 3.01</p>
+                    <h1 className="text-3xl font-bold text-slate-800">點名表</h1>
+                    <p className="text-sm text-slate-500 mt-1">香海正覺蓮社佛教正覺蓮社學校 - Version 3.1</p>
                     <button onClick={() => setCurrentView('adminLogin')} className="flex items-center text-sm text-slate-500 hover:text-blue-600"><Settings size={16} className="mr-1"/>Admin</button>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -470,6 +533,7 @@ const App = () => {
                         students={studentsForSelectedActivity}
                         today={today}
                         onSave={handleSaveAttendance}
+                        onSaveSingle={handleSaveSingleAttendance}
                         onCancel={() => setCurrentView('activityList')}
                     />
                 );
