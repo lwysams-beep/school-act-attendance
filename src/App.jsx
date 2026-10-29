@@ -488,7 +488,7 @@ const App = () => {
                     {todaysActivities.map(name => (
                         <button key={name} onClick={() => handleActivitySelect(name)} className="bg-white p-6 rounded-xl shadow-md text-left hover:shadow-lg hover:ring-2 hover:ring-blue-500 transition-all">
                             <div className="flex items-center">
-                                <div className="p-3 bg-blue-100 rounded-lg mr-4"><Activity size={24} className="text-blue-600"/></div>
+                                <div className="p-3 bg-orange-100 rounded-lg mr-4"><Activity size={24} className="text-orange-700"/></div>
                                 <span className="text-xl font-bold text-slate-800">{name}</span>
                             </div>
                         </button>
