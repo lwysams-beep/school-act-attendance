@@ -1,6 +1,6 @@
 // =============================================================================
-//  點名專用 APP - VERSION 3.1
-//  修正：逐項即時儲存、避免即時監聽重設未提交狀態、顯示同步狀態
+//  點名專用 APP - VERSION 3.2
+//  優化：首頁只讀取今日活動；點名時只監聽所選活動；Admin 才載入全校資料；避免成功記錄重複寫入
 //  功能: 1. 點名加入"無故缺席"選項 2. 更新CSV圖例 3. 改善儲存密碼時的權限錯誤提示 4. 點名後同步更新 attendanceStatus
 // =============================================================================
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
@@ -11,7 +11,7 @@ import { Shield, Key, List, User, Activity, LogOut, Save, Settings, MonitorPlay,
 // =============================================================================
 import { initializeApp } from "firebase/app";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
-import { getFirestore, collection, doc, onSnapshot, updateDoc, setDoc, writeBatch } from "firebase/firestore";
+import { getFirestore, collection, doc, onSnapshot, getDocs, query, where, updateDoc, setDoc } from "firebase/firestore";
 
 const firebaseConfig = {
     apiKey: "AIzaSyDXZClMosztnJBd0CK6cpS6PPtJTTpgDkQ",
@@ -137,7 +137,7 @@ const AttendanceSheetView = ({ activityName, students, today, onSave, onSaveSing
     const handleSave = async () => {
         setIsSaving(true);
         try {
-            await onSave(attendance);
+            await onSave(attendance, saveStatusByStudent);
         } finally {
             setIsSaving(false);
         }
@@ -188,8 +188,13 @@ const App = () => {
     const [selectedActivity, setSelectedActivity] = useState(null);
     const [passwordInput, setPasswordInput] = useState('');
     const [authError, setAuthError] = useState('');
+    const [adminDataLoaded, setAdminDataLoaded] = useState(false);
     // 同一學生的寫入依次執行，避免快速連按時較早的狀態最後才寫入。
     const singleWriteQueues = useRef(new Map());
+    const failedAttendanceWrites = useRef(new Set());
+
+    const today = useMemo(() => new Date().toLocaleDateString('en-CA'), []);
+    const currentDayId = useMemo(() => new Date().getDay(), []);
 
     useEffect(() => {
         const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
@@ -197,31 +202,105 @@ const App = () => {
             // 如果登出，自動導回首頁
             if (!currentUser) {
                 setCurrentView('activityList');
+                setAdminDataLoaded(false);
             }
         });
-        
-        const unsubscribeActivities = onSnapshot(collection(db, "activities"), (snapshot) => {
-            const validDocs = snapshot.docs
-                .map(doc => ({ id: doc.id, ...doc.data() }))
-                .filter(doc => doc.activity); // 過濾掉沒有活動名稱的異常數據
-            setActivities(validDocs);
-        });
-        
-        const unsubscribeConfigs = onSnapshot(collection(db, "activity_configs"), (snapshot) => {
-            const configs = {};
-            snapshot.forEach(doc => { configs[doc.id] = doc.data(); });
-            setActivityConfigs(configs);
-        });
-        
-        // 只在組件載入時執行一次，切換頁面不中斷連線
-        return () => { unsubscribeAuth(); unsubscribeActivities(); unsubscribeConfigs(); };
-    }, []);
 
-    const today = useMemo(() => new Date().toLocaleDateString('en-CA'), []);
+        let isMounted = true;
+        const loadHomeData = async () => {
+            try {
+                // 首頁只讀取今天可能進行的活動，不再讀取整個 activities 集合。
+                // 常規活動：dayIds 包含今天，而且沒有指定日期例外。
+                // 特定日期活動：specificDates 包含今天。
+                const [regularSnapshot, specificSnapshot, configsSnapshot] = await Promise.all([
+                    getDocs(query(collection(db, "activities"), where("dayIds", "array-contains", currentDayId))),
+                    getDocs(query(collection(db, "activities"), where("specificDates", "array-contains", today))),
+                    getDocs(collection(db, "activity_configs"))
+                ]);
+
+                if (!isMounted) return;
+
+                const docsById = new Map();
+                regularSnapshot.forEach(item => {
+                    const data = item.data();
+                    if (data.activity && !data.specificDates?.length) {
+                        docsById.set(item.id, { id: item.id, ...data });
+                    }
+                });
+                specificSnapshot.forEach(item => {
+                    const data = item.data();
+                    if (data.activity) docsById.set(item.id, { id: item.id, ...data });
+                });
+                setActivities(Array.from(docsById.values()));
+
+                const configs = {};
+                configsSnapshot.forEach(item => { configs[item.id] = item.data(); });
+                setActivityConfigs(configs);
+            } catch (error) {
+                console.error("讀取今日活動資料失敗:", error);
+                if (isMounted) alert("讀取今日活動資料失敗，請檢查網絡連線及 Firestore 權限後重新載入。");
+            }
+        };
+
+        loadHomeData();
+        return () => {
+            isMounted = false;
+            unsubscribeAuth();
+        };
+    }, [today, currentDayId]);
+
+    // 只有進入點名頁才監聽所選活動；離開頁面即取消監聽。
+    // 這避免每位老師的裝置長期監聽全校 activities 集合。
+    useEffect(() => {
+        if (currentView !== 'attendanceSheet' || !selectedActivity) return;
+
+        const selectedActivityQuery = query(
+            collection(db, "activities"),
+            where("activity", "==", selectedActivity)
+        );
+
+        const unsubscribeSelectedActivity = onSnapshot(selectedActivityQuery, (snapshot) => {
+            const selectedDocs = snapshot.docs
+                .map(item => ({ id: item.id, ...item.data() }))
+                .filter(item => item.activity);
+            setActivities(prev => [
+                ...prev.filter(item => item.activity !== selectedActivity),
+                ...selectedDocs
+            ]);
+        }, error => {
+            console.error("監聽目前活動失敗:", error);
+            alert("同步目前活動資料失敗，請檢查網絡連線及 Firestore 權限。");
+        });
+
+        return () => unsubscribeSelectedActivity();
+    }, [currentView, selectedActivity]);
+
+    // Admin 功能需要全校及歷史資料（活動清單、狀態總覽、CSV），只在 Admin 登入後載入一次。
+    useEffect(() => {
+        if (currentView !== 'adminConsole' || !user || adminDataLoaded) return;
+        let isMounted = true;
+
+        const loadAdminData = async () => {
+            try {
+                const snapshot = await getDocs(collection(db, "activities"));
+                if (!isMounted) return;
+                const allDocs = snapshot.docs
+                    .map(item => ({ id: item.id, ...item.data() }))
+                    .filter(item => item.activity);
+                setActivities(allDocs);
+                setAdminDataLoaded(true);
+            } catch (error) {
+                console.error("讀取 Admin 全校資料失敗:", error);
+                if (isMounted) alert("讀取 Admin 資料失敗，請檢查網絡連線及 Firestore 權限。");
+            }
+        };
+
+        loadAdminData();
+        return () => { isMounted = false; };
+    }, [currentView, user, adminDataLoaded]);
 
     const todaysActivities = useMemo(() => {
         const uniqueActivityNames = new Set();
-        const currentDayId = new Date().getDay();
         activities.forEach(act => {
             const isRegularDay = act.dayIds && act.dayIds.includes(currentDayId);
             const isSpecificDate = act.specificDates?.includes(today);
@@ -272,6 +351,10 @@ const App = () => {
         singleWriteQueues.current.set(studentDocId, currentWrite);
         try {
             await currentWrite;
+            failedAttendanceWrites.current.delete(studentDocId);
+        } catch (error) {
+            failedAttendanceWrites.current.add(studentDocId);
+            throw error;
         } finally {
             if (singleWriteQueues.current.get(studentDocId) === currentWrite) {
                 singleWriteQueues.current.delete(studentDocId);
@@ -279,51 +362,57 @@ const App = () => {
         }
     }, [today]);
 
-    const handleSaveAttendance = useCallback(async (attendanceData) => {
+    const handleSaveAttendance = useCallback(async (attendanceData, saveStatusData = {}) => {
         if (Object.keys(attendanceData).length === 0) return alert("沒有需要儲存的點名記錄。");
         try {
-            // 等候正在進行的即時寫入，然後再作整班核對／補存。
-            await Promise.all(
-                Array.from(singleWriteQueues.current.values()).map(write => write.catch(() => {}))
-            );
+            // 等候本班尚未完成的即時寫入；成功項目不再重複寫入。
+            const pendingWrites = Array.from(singleWriteQueues.current.values());
+            await Promise.allSettled(pendingWrites);
 
-            const batch = writeBatch(db);
-            Object.entries(attendanceData).forEach(([studentDocId, status]) => {
-                const activityRef = doc(db, "activities", studentDocId);
-                // V2.9: 新增同步寫入 attendanceStatus 欄位
-                batch.update(activityRef, { 
-                    [`attendance.${today}`]: status,
-                    "attendanceStatus": status
-                });
+            // 只重試即時儲存失敗的學生，不重寫整班已成功的記錄。
+            const retryIds = new Set(failedAttendanceWrites.current);
+            Object.entries(saveStatusData).forEach(([studentDocId, status]) => {
+                if (status === 'error') retryIds.add(studentDocId);
             });
-            await batch.commit();
-            alert("點名記錄已成功儲存！");
+
+            for (const studentDocId of retryIds) {
+                const status = attendanceData[studentDocId];
+                if (status) await handleSaveSingleAttendance(studentDocId, status);
+            }
+
+            const remainingFailures = Array.from(failedAttendanceWrites.current)
+                .filter(studentDocId => Object.prototype.hasOwnProperty.call(attendanceData, studentDocId));
+            if (remainingFailures.length > 0) {
+                throw new Error("仍有學生記錄未能同步，請檢查網絡後重試。");
+            }
+
+            alert("點名記錄已成功同步至 Firebase！");
             setCurrentView('activityList');
+            setSelectedActivity(null);
         } catch (error) {
-            console.error("批量更新點名狀態失敗:", error);
-            
-            // 根據 Firebase 錯誤類型給予詳細提示
+            console.error("點名同步／補存失敗:", error);
             if (error.code === 'permission-denied') {
-                alert("儲存失敗：權限不足。請檢查 Firebase Firestore 的 Security Rules 是否允許更新 'activities' 集合。");
-            } else if (error.code === 'unavailable') {
-                alert("儲存失敗：無法連接至伺服器，請檢查網絡連線。");
+                alert("儲存失敗：權限不足。請檢查 Firebase Firestore Security Rules 是否允許更新 'activities' 集合。未成功的記錄仍留在目前畫面，請修正權限後重試。");
+            } else if (error.code === 'unavailable' || error.code === 'deadline-exceeded') {
+                alert("儲存失敗：無法連接至伺服器。請檢查網絡連線；未成功的記錄仍留在目前畫面，請稍後重試。");
             } else {
-                alert(`儲存失敗 (${error.code || '未知錯誤'})：${error.message}`);
+                alert(`儲存失敗 (${error.code || '未知錯誤'})：${error.message || '請稍後重試。'}`);
             }
         }
-    }, [today]);
+    }, [today, handleSaveSingleAttendance]);
 
     const handleAdminLogin = async (email, password) => {
         try { await signInWithEmailAndPassword(auth, email, password); setCurrentView('adminConsole'); } 
         catch (error) { alert("Admin 登入失敗: " + error.message); }
     };
 
-    const handleAdminLogout = async () => { await signOut(auth); setCurrentView('activityList'); };
+    const handleAdminLogout = async () => { await signOut(auth); setAdminDataLoaded(false); setCurrentView('activityList'); };
 
     const handleSaveConfig = async (activityName, password) => {
         if (password.length !== 4) return alert("密碼必須為4位英文或數字！");
         try {
             await setDoc(doc(db, "activity_configs", activityName), { password }, { merge: true });
+            setActivityConfigs(prev => ({ ...prev, [activityName]: { ...(prev[activityName] || {}), password } }));
             alert(`「${activityName}」的密碼已更新。`);
         } catch (error) {
             if (error.code === 'permission-denied') {
@@ -481,7 +570,7 @@ const App = () => {
             <div className="p-4 md:p-8">
                 <div className="flex justify-between items-center mb-6">
                     <h1 className="text-3xl font-bold text-slate-800">點名</h1>
-                    <p className="text-sm text-slate-500 mt-1">香海正覺蓮社佛教正覺蓮社學校 - Version 3.1</p>
+                    <p className="text-sm text-slate-500 mt-1">香海正覺蓮社佛教正覺蓮社學校 - Version 3.2</p>
                     <button onClick={() => setCurrentView('adminLogin')} className="flex items-center text-sm text-slate-500 hover:text-blue-600"><Settings size={16} className="mr-1"/>Admin</button>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
